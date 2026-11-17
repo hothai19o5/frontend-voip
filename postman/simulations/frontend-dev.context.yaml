@@ -1,0 +1,73 @@
+purpose:
+  stands_in_for: VoIP backend Auth, Users and own SIP configuration HTTP API.
+  unblocks: Frontend auth/session lifecycle, primary Messages UI, directory and SIP orchestration checks without creating real PBX extensions.
+assumptions:
+  - id: auth-and-directory-contract
+    status: supported
+    claim: The implemented frontend uses the documented username login, registration, bearer auth, own SIP configuration and zero-based directory page shapes.
+    reason: Requests and response consumption were compared with the checked-in backend OpenAPI and API.md; browser checks exercised these paths through the local HTTP handler.
+    verification: >-
+      On 2026-11-17, read ../backend-voip/docs/openapi.yaml and API.md, ran the real
+      frontend against postman/mocks/voip/default.cjs using the portable pm.state
+      adapter. Registration/conflict/login, directory query/pagination/upstream
+      errors, SIP config success/failure, expiry and logout behaved as asserted.
+      output/playwright/verification.json records request counts and outcomes.
+      These checks establish caller behavior against modeled responses, not the
+      live backend or provider. Postman simulation itself did not start: CLI
+      1.74.0 dataset-daemon failed with Windows exception 0xc0000008. Owner mock
+      lookup was skipped; postman status is not supported by this CLI.
+    source: ../backend-voip/docs/openapi.yaml; ../backend-voip/docs/API.md; src/lib/api.ts; scripts/verify-frontend.mjs; scripts/run-api-mock.cjs
+    updated_at: '2026-11-17'
+  - id: identity-invalidation
+    status: supported
+    claim: Under the tested HTTP 401 and expiry scenarios the frontend drops its identity and tears down SIP/media, while a SIP-only failure leaves app identity usable.
+    reason: Browser assertions observed login redirection, no remaining media elements and closed SIP registration, plus directory access during a SIP configuration 503.
+    verification: >-
+      On 2026-11-17 the portable simulation and two headless Chrome clients
+      exercised the cases in scripts/verify-frontend.mjs. Unit tests additionally
+      check that stale unauthorized results do not invalidate a newer token.
+    source: scripts/verify-frontend.mjs; tests/session-store.test.js; src/features/auth/session-store.ts; src/features/sip/sip-provider.tsx
+    updated_at: '2026-11-17'
+  - id: live-pbx-interop
+    status: unknown
+    claim: The frontend can register and exchange voice/video with the user's deployed FusionPBX and Linphone configuration.
+    reason: Only local SIP signaling and browser WebRTC were directly exercised in this increment; earlier POC/user reports are prior context.
+    verification: >-
+      Real SIP.js instances in two Chrome contexts exchanged voice and video
+      through a test-only proxy; route changes preserved the existing client.
+      The proxy does not reproduce PBX authentication, NAT, TLS or RTP relay.
+      A live backend login and FusionPBX/Linphone call are still needed to settle this claim.
+    source: scripts/sip-test-proxy.mjs; scripts/verify-frontend.mjs; ../PROJECT_CONTEXT.md
+    updated_at: '2026-11-17'
+  - id: messages-in-session
+    status: supported
+    claim: The tested frontend defaults to Messages and exchanges SIP MESSAGE while keeping conversations and drafts only inside its app session.
+    reason: The user explicitly chose the POC SIP MESSAGE transport and in-session history. Two real SIP.js browser clients exercised successful and failed MESSAGE responses through the local signaling proxy.
+    verification: >-
+      On 2026-11-17 browser checks observed two-way text, no HTML interpretation,
+      pending/accepted and failed states, retained drafts on failure/navigation,
+      unread indication away from Messages, responsive list/thread/profile views
+      and empty history in a new app session. The receiver acknowledgment is not
+      a read receipt. The stand-in does not establish offline delivery or live
+      PBX MESSAGE behavior. Report and screenshots are under output/playwright/.
+    source: src/features/messages/; scripts/verify-frontend.mjs; tests/message-store.test.js; scripts/sip-test-proxy.mjs
+    updated_at: '2026-11-17'
+  - id: messenger-islands-and-toast-flow
+    status: supported
+    claim: In the current Messenger-only UI the directory contract remains usable through a modal picker and errors appear as floating toasts without replacing app content.
+    reason: The latest browser suite exercised full-viewport islands, account menu, collapse/expand, paged search and toast retry while preserving SIP/media and message state.
+    verification: >-
+      On 2026-11-17, ran scripts/run-frontend-verification.ps1 with the existing
+      portable contract mock and SIP proxy. All 16 groups passed, including
+      1577/1440/1024/768/390 layout, picker abort/search/paging, HTTP errors,
+      reconnect action, MESSAGE and two-browser voice/video. The old dedicated
+      users/calls/connection screens were removed. This supersedes earlier UI
+      navigation descriptions without changing the HTTP contracts. Shared photo
+      and file sections show empty states; no file endpoint was invented.
+    source: scripts/verify-frontend.mjs; src/features/users/people-picker.tsx; src/components/toast-provider.tsx; src/features/messages/messages-page.tsx
+    updated_at: '2026-11-17'
+fingerprints:
+  - id: frontend-implementation-2026-11-17
+    date: '2026-11-17'
+    commit: c96cadf0c4e9f84b5b31eab56c82b169bf08117d (dirty working tree with frontend implementation)
+    cli: Postman CLI 1.74.0

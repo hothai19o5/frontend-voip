@@ -1,0 +1,8 @@
+simulation: voip-frontend-dev
+routing: path
+mocks:
+  - name: VoIP Auth Users SIP
+    routeKey: voip
+    path: postman/mocks/voip/config.yaml
+    origin:
+      - localhost:8080

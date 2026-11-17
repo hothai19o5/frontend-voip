@@ -1,0 +1,9 @@
+version: 1
+name: VoIP Auth Users SIP
+slug: voip
+protocol: http
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.cjs
+    default: true
