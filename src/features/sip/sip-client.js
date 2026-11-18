@@ -115,6 +115,10 @@ export class SipClient {
     const current = () => this.manager === manager
     const manager = new this.Manager(server, {
       aor,
+      // SessionManager's anonymous beforeunload handler calls stop() again if
+      // a previous logout is still stopping. Own this through disconnect's
+      // serialized cleanup and remove it as soon as the manager is retired.
+      autoStop: false,
       maxSimultaneousSessions: 1,
       reconnectionAttempts: 0,
       media: {
@@ -223,6 +227,12 @@ export class SipClient {
       },
     })
     this.manager = manager
+    if (typeof window !== 'undefined') {
+      this.beforeUnload = () => {
+        void this.disconnect().catch(() => {})
+      }
+      window.addEventListener('beforeunload', this.beforeUnload)
+    }
     this.update({ connection: 'connecting' })
     try {
       await manager.connect()
@@ -405,6 +415,10 @@ export class SipClient {
   }
 
   async disconnect() {
+    if (this.beforeUnload && typeof window !== 'undefined') {
+      window.removeEventListener('beforeunload', this.beforeUnload)
+      this.beforeUnload = null
+    }
     this.generation += 1
     const manager = this.manager
     this.manager = null

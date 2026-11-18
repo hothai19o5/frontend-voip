@@ -1,14 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft,
-  Clock3,
   Info,
   MessageCircle,
   Phone,
   Search,
-  Send,
   SquarePen,
   Video,
 } from 'lucide-react'
@@ -24,6 +21,8 @@ import { normalizePeer } from './message-store'
 import { MessageBubble } from './message-bubble'
 import { timeLabel } from './message-format'
 import { ConversationProfile } from './conversation-profile'
+import { MessageComposer } from './message-composer'
+import { messagePreview } from './message-content'
 
 const dateLabel = (time: number) =>
   new Date(time).toLocaleDateString('vi-VN', {
@@ -56,8 +55,6 @@ export function MessagesPage() {
   )
   const wide = useMediaQuery('(min-width: 1280px)')
   const profileOpen = profilePreference ?? wide
-  const [sending, setSending] = useState(false)
-  const sendingLock = useRef(false)
   const bottom = useRef<HTMLDivElement>(null)
   const historyElement = useRef<HTMLDivElement>(null)
   const sorted = Object.values(conversations).sort(
@@ -127,27 +124,6 @@ export function MessagesPage() {
       action: { label: 'Thử lại', onClick: sip.retry },
     })
     return false
-  }
-  async function send(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    if (
-      !selected ||
-      !selected.draft.trim() ||
-      blocked ||
-      sendingLock.current ||
-      !connectionReady()
-    )
-      return
-    const { peer, draft } = selected
-    sendingLock.current = true
-    setSending(true)
-    try {
-      if (await sip.sendMessage(peer, draft))
-        dispatch({ type: 'draft', peer, value: '' })
-    } finally {
-      sendingLock.current = false
-      setSending(false)
-    }
   }
   function openConversation(user: DirectoryUser) {
     if (!user.sip || user.status !== 'ACTIVE') return
@@ -247,7 +223,7 @@ export function MessagesPage() {
                             {conversation.draft}
                           </>
                         ) : last ? (
-                          `${last.direction === 'outgoing' ? 'Bạn: ' : ''}${last.body}`
+                          `${last.direction === 'outgoing' ? 'Bạn: ' : ''}${messagePreview(last.body)}`
                         ) : (
                           'Bắt đầu cuộc trò chuyện'
                         )}
@@ -409,36 +385,7 @@ export function MessagesPage() {
                 ) : null}
                 <div ref={bottom} />
               </div>
-              <div className="message-composer-wrap">
-                <form className="message-composer" onSubmit={send}>
-                  <Field
-                    id="message-draft"
-                    name="message"
-                    label="Nội dung tin nhắn"
-                    value={selected.draft}
-                    onChange={(event) =>
-                      dispatch({
-                        type: 'draft',
-                        peer: selected.peer,
-                        value: event.target.value,
-                      })
-                    }
-                    placeholder="Nhập tin nhắn…"
-                    maxLength={5000}
-                    disabled={sending || blocked}
-                    autoComplete="off"
-                  />
-                  <Button
-                    type="submit"
-                    size="icon"
-                    className="send-button"
-                    aria-label="Gửi tin nhắn"
-                    disabled={blocked || !selected.draft.trim() || sending}
-                  >
-                    {sending ? <Clock3 /> : <Send />}
-                  </Button>
-                </form>
-              </div>
+              <MessageComposer key={selected.peer} conversation={selected} />
             </>
           ) : (
             <div className="messages-welcome">

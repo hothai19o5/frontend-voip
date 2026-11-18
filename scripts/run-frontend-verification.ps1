@@ -1,4 +1,4 @@
-param([switch]$UsePostman, [switch]$CallWindowOnly, [switch]$HistoryOnly)
+param([switch]$UsePostman, [switch]$CallWindowOnly, [switch]$HistoryOnly, [switch]$ExpressionsOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $previousLocation = Get-Location
@@ -43,15 +43,19 @@ try {
     -RedirectStandardOutput output\playwright\vite.log -RedirectStandardError output\playwright\vite.err.log
   $processes += $viteProcess
   Wait-Endpoint "$($env:TEST_FRONTEND_URL)/login" $viteProcess
-  if (!$CallWindowOnly -and !$HistoryOnly) {
+  if (!$CallWindowOnly -and !$HistoryOnly -and !$ExpressionsOnly) {
     node scripts/verify-frontend.mjs
     if ($LASTEXITCODE -ne 0) { throw "Frontend verification failed ($LASTEXITCODE)." }
   }
-  if (!$CallWindowOnly) {
+  if (!$CallWindowOnly -and !$ExpressionsOnly) {
     node scripts/verify-history.mjs
     if ($LASTEXITCODE -ne 0) { throw "History verification failed ($LASTEXITCODE)." }
   }
-  if (!$HistoryOnly) {
+  if (!$CallWindowOnly -and !$HistoryOnly) {
+    node scripts/verify-expressions.mjs
+    if ($LASTEXITCODE -ne 0) { throw "Expressions verification failed ($LASTEXITCODE)." }
+  }
+  if (!$HistoryOnly -and !$ExpressionsOnly) {
     node scripts/verify-call-window.mjs
     if ($LASTEXITCODE -ne 0) { throw "Call window verification failed ($LASTEXITCODE)." }
   }

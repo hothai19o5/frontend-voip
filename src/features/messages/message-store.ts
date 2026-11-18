@@ -41,7 +41,7 @@ export type MessageAction =
   | { type: 'open'; user: DirectoryUser }
   | { type: 'message'; event: MessageEvent }
   | { type: 'read'; peer: string }
-  | { type: 'draft'; peer: string; value: string }
+  | { type: 'draft'; peer: string; value: string; expected?: string }
   | { type: 'history-list'; conversations: HistoryConversation[] }
   | { type: 'history'; peer: string; page: HistoryPage<HistoryEntry> }
   | { type: 'history-save'; id: string; status: ChatMessage['historyState'] }
@@ -209,5 +209,7 @@ export function messageReducer(
     return conversation.unread
       ? { ...state, [peer]: { ...conversation, unread: 0 } }
       : state
+  if (action.expected !== undefined && conversation.draft !== action.expected)
+    return state
   return { ...state, [peer]: { ...conversation, draft: action.value } }
 }

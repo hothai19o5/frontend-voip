@@ -83,6 +83,20 @@ assumptions:
       text survived backend restart. Live FusionPBX interop remains unverified.
     source: scripts/verify-history.mjs; postman/mocks/voip/default.cjs; ../backend-voip/docs/MESSAGE_HISTORY.md; ../backend-voip/scripts/run-history-verification.ps1
     updated_at: '2026-11-18'
+  - id: text-expressions-and-stickers
+    status: supported
+    claim: The frontend sends emoji/emotes and bundled stickers through the existing SIP text/plain transport and saves the same body through the unchanged history API.
+    reason: No new backend request or attachment transport is required; the seven expression browser groups observe body persistence and rendering with local artwork.
+    verification: >-
+      On 2026-11-18, verify-expressions.mjs passed caret/selection insertion,
+      accent-insensitive search, keyboard close/focus, two-way sticker messages,
+      draft preservation, reload/login history, unknown sticker text fallback,
+      mock image/file actions, 1440/1024/768/390 layouts and failed-send retry.
+      Only known catalog payloads render the bundled artwork; remote URLs remain
+      plain text. No attachment API is modeled or called. These scenarios use the
+      existing portable HTTP handler and SIP proxy; deployed PBX is unverified.
+    source: scripts/verify-expressions.mjs; src/features/messages/message-content.ts; src/features/messages/message-composer.tsx; src/assets/stickers/README.md
+    updated_at: '2026-11-18'
 fingerprints:
   - id: frontend-implementation-2026-11-17
     date: '2026-11-17'

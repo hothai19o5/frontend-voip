@@ -1,9 +1,13 @@
 import { Check, CircleAlert, Clock3 } from 'lucide-react'
 import type { ChatMessage } from './message-store'
 import { timeLabel } from './message-format'
+import { parseSticker, isEmojiOnly } from './message-content'
+import { StickerArt } from './sticker-art'
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
   const outgoing = message.direction === 'outgoing'
+  const sticker = parseSticker(message.body)
+  const expressive = !sticker && isEmojiOnly(message.body)
   const label =
     message.status === 'pending'
       ? 'Đang gửi'
@@ -14,9 +18,11 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           : 'Đã gửi tới dịch vụ'
   return (
     <div
-      className={`chat-message ${outgoing ? 'outgoing-message' : 'incoming-message'}`}
+      className={`chat-message ${outgoing ? 'outgoing-message' : 'incoming-message'} ${sticker ? 'sticker-message' : expressive ? 'emoji-message' : ''}`}
     >
-      <div className="message-body">{message.body}</div>
+      <div className="message-body">
+        {sticker ? <StickerArt sticker={sticker} /> : message.body}
+      </div>
       <div className="message-meta">
         <time dateTime={new Date(message.time).toISOString()}>
           {timeLabel(message.time)}

@@ -57,6 +57,7 @@ function fixture() {
     }
     async disconnect() {
       this.disconnected = true
+      this.disconnectCount = (this.disconnectCount || 0) + 1
     }
     async call(peer, options) {
       this.callOptions = options
@@ -344,6 +345,39 @@ test('a late unregistered callback after WSS loss cannot report connected', asyn
   manager.options.delegate.onUnregistered()
   assert.equal(f.client.state.connection, 'disconnected')
   await f.client.disconnect()
+})
+
+test('logout and beforeunload share one cleanup and remove the retired unload listener', async () => {
+  const original = globalThis.window
+  const listeners = new Set()
+  globalThis.window = {
+    addEventListener: (type, handler) => {
+      if (type === 'beforeunload') listeners.add(handler)
+    },
+    removeEventListener: (type, handler) => {
+      if (type === 'beforeunload') listeners.delete(handler)
+    },
+  }
+  const f = fixture()
+  try {
+    const manager = await f.registered()
+    assert.equal(manager.options.autoStop, false)
+    assert.equal(listeners.size, 1)
+    const staleUnload = [...listeners][0]
+    const stopping = f.client.disconnect()
+    assert.equal(listeners.size, 0)
+    staleUnload()
+    await stopping
+    await f.client.stopping
+    assert.equal(manager.disconnectCount, 1)
+    await f.registered()
+    assert.equal(listeners.size, 1)
+  } finally {
+    await f.client.disconnect()
+    if (original === undefined) delete globalThis.window
+    else globalThis.window = original
+  }
+  assert.equal(listeners.size, 0)
 })
 
 test('a delayed media failure after logout cannot clear a newer call', async () => {

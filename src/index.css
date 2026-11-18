@@ -2276,3 +2276,128 @@ svg {
   font-size: 0.8rem;
   text-align: center;
 }
+
+.composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.composer-tool[data-slot='button'] {
+  width: 32px;
+  height: 36px;
+  padding: 0;
+  color: var(--primary);
+  border-radius: 50%;
+}
+.composer-tool svg {
+  width: 19px;
+  height: 19px;
+}
+.attachment-mock[data-slot='button'] {
+  color: #8792a3;
+}
+.expression-picker {
+  z-index: 60;
+  width: 328px;
+  max-width: calc(100vw - 24px);
+  max-height: min(440px, var(--radix-popover-content-available-height));
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 12px;
+  background: #fff;
+  color: #333942;
+  box-shadow: 0 12px 40px #1722381a;
+  outline: none;
+}
+.expression-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 4px;
+  font-size: 14px;
+}
+.expression-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.expression-tabs button {
+  flex: 1;
+  padding: 10px 6px;
+  color: #69788f;
+  font-size: 13px;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.expression-tabs button[data-state='active'] {
+  color: var(--primary);
+  border-color: var(--primary);
+  font-weight: 600;
+}
+.expression-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: #f0f2f5;
+  border-radius: 20px;
+  margin-bottom: 12px;
+}
+.expression-search svg { width: 16px; color: #8792a3; flex-shrink: 0; }
+.expression-search input[data-slot='input'] {
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  padding-inline: 0;
+  box-shadow: none;
+}
+.expression-content { height: 258px; overflow-y: auto; scrollbar-width: thin; }
+.expression-content h3 { font-size: 11px; color: #69788f; margin: 8px 4px; font-weight: 500; }
+.emoji-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; padding: 0 1px 8px; }
+.emoji-option, .emote-option, .sticker-option {
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 140ms ease, transform 140ms ease;
+}
+.emoji-option { height: 38px; font-size: 25px; line-height: 1; }
+.emote-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 4px; }
+.emote-option { min-height: 58px; padding: 8px 4px; border: 1px solid #f0f1f3; }
+.emote-option > span { display: block; font-size: 14px; white-space: nowrap; }
+.emote-option small { display: block; color: #69788f; font-size: 10px; margin-top: 6px; }
+.sticker-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.sticker-art {
+  display: block;
+  width: 172px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  background-repeat: no-repeat;
+  background-size: 300% 200%;
+}
+.sticker-option { display: flex; justify-content: center; padding: 2px; }
+.sticker-option .sticker-art { width: 84px; }
+.sticker-option:disabled, .emoji-option:disabled, .emote-option:disabled { opacity: 0.5; cursor: default; }
+.expression-empty, .sticker-picker-hint { color: #69788f; font-size: 12px; text-align: center; padding: 12px 4px; }
+.sticker-picker-hint { padding: 0 4px; margin: 0 0 6px; font-size: 11px; text-align: left; }
+.expression-arrow { fill: #fff; }
+.expression-picker button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.sticker-message .message-body, .emoji-message .message-body { background: transparent; padding: 0 4px; }
+.emoji-message .message-body { color: inherit; font-size: 36px; line-height: 1.35; }
+@media (hover: hover) {
+  .emoji-option:hover, .emote-option:hover, .sticker-option:hover { background: #f0f2f5; transform: translateY(-1px); }
+  .expression-tabs button:hover { background: #f7f8fa; }
+}
+@media (max-width: 640px) {
+  .composer-tools { gap: 0; }
+  .composer-tool[data-slot='button'] { width: 29px; }
+  .composer-tool svg { width: 18px; height: 18px; }
+  .expression-content { height: 246px; }
+  .sticker-art { width: 148px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .emoji-option, .emote-option, .sticker-option { transition: none; }
+}

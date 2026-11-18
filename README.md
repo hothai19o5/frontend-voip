@@ -77,6 +77,29 @@ configuration are never presented as remote online registration.
 
 ## Session and communication lifetime
 
+### Emoji, emotes and stickers
+
+The smile button beside the composer opens searchable Emoji, Emote and Sticker
+tabs. Emoji/emotes replace the current selection or insert at the caret; search
+supports Vietnamese with or without accents. Emoji-only messages display larger.
+The six built-in **Mầm nhỏ** stickers send immediately while preserving the text
+draft. Failed sends leave the picker open so the user can retry.
+
+Stickers use the existing SIP `text/plain` and history body contract:
+`[[voip:sticker:v1:wave]] 👋 Xin chào!`, with exact known id/fallback combinations
+defined in `message-content.ts`. Updated VoIP clients render the bundled WebP art;
+other SIP clients see readable text. Unknown versions/ids and malformed payloads
+stay plain text. No URL supplied in a message is loaded as sticker artwork.
+The conversation list shows the sticker's name; saved stickers render after login.
+
+The image/file buttons are intentionally mocks. Clicking shows a toast that the
+feature will be added later, without opening a file chooser or uploading data.
+There is no attachment endpoint. The sticker asset, generation prompt and format
+notes live in `src/assets/stickers/README.md`; the 241 KB atlas loads only when
+sticker art is displayed.
+
+### Authentication and persistence
+
 Tokens, SIP secrets and drafts stay in RAM. **Reloading/closing the tab requires
 a new login and can end the call.** Saved message history is restored from the
 backend after login. There is no browser storage or refresh-token flow.
@@ -162,6 +185,9 @@ again, decline/cancel/end, and logout cleanup. Call-window screenshots and the
 dedicated `call-window-results.json` report are written to the same output folder.
 Pass `-CallWindowOnly` to the PowerShell runner to run only the detached-window
 scenarios, including child reload and main-app reload cleanup.
+Pass `-ExpressionsOnly` to run seven emoji/emote/sticker groups, including caret
+insertion, search/keyboard access, two-way send/history, fallback, mock attachments,
+four responsive widths and failure/retry. Screenshots are `expressions-*.png`.
 Pass `-HistoryOnly` to run the six history groups: two-way saves, reload/login,
 write retry, pagination, read retry and a live-message/HTTP snapshot race.
 
@@ -170,8 +196,8 @@ Use `-UsePostman` to run it through the CLI. CLI 1.74.0's dataset daemon crashes
 while initializing `pm.state` on this Windows environment, so the default runner
 uses the same handler with a portable RAM adapter. No mock/workspace is published.
 
-Validated 2026-11-18: build, 39 unit tests and 28 browser scenario groups (16 app,
-6 history, 6 detached-call groups) covering
+Validated 2026-11-18: build, 45 unit tests and 35 browser scenario groups (16 app,
+6 history, 7 expressions, 6 detached-call groups) covering
 island layout (1577/1440/1024/768/390), sidebar/account menu, picker search/paging,
 toasts, SIP MESSAGE, failed sends/drafts, voice/video, mic/camera, reconnect,
 active-call 401/logout, token expiry and local-state cleanup. No browser page

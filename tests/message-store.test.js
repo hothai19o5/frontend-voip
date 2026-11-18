@@ -37,6 +37,29 @@ test('SIP peer normalization keeps one conversation per extension/domain', () =>
   assert.equal(state['sip:1002@pbx.test'].messages.length, 1)
 })
 
+test('a late send completion cannot clear a newer draft after switching conversations', () => {
+  let state = reduce({}, { type: 'message', event })
+  state = reduce(state, {
+    type: 'draft',
+    peer: event.peer,
+    value: 'Đang soạn tin mới',
+  })
+  const unchanged = reduce(state, {
+    type: 'draft',
+    peer: event.peer,
+    value: '',
+    expected: 'Tin vừa gửi',
+  })
+  assert.equal(unchanged, state)
+  state = reduce(state, {
+    type: 'draft',
+    peer: event.peer,
+    value: '',
+    expected: 'Đang soạn tin mới',
+  })
+  assert.equal(state[normalizePeer(event.peer)].draft, '')
+})
+
 test('transport acknowledgment updates one message without inventing a read receipt', () => {
   let state = reduce(
     {},
