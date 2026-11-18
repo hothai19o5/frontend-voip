@@ -1,6 +1,7 @@
 import { Messager, UserAgent } from 'sip.js'
 import { SessionManager } from 'sip.js/lib/platform/web/index.js'
 import { observeRemoteVideo } from './remote-video.js'
+import { createLocalId } from '../../lib/local-id.js'
 
 export const INITIAL_STATE = {
   connection: 'disconnected',
@@ -206,16 +207,10 @@ export class SipClient {
             ?.split(';')[0]
             .trim()
             .toLowerCase()
-          if (type !== 'text/plain') {
-            this.onError(
-              new Error(
-                `POC chỉ hiển thị tin text/plain (nhận ${type || 'không rõ'}).`,
-              ),
-            )
-            return
-          }
+          // Ignore unsupported payloads (including delivery receipts) silently.
+          if (type !== 'text/plain') return
           this.onMessage({
-            id: crypto.randomUUID(),
+            id: createLocalId(),
             account: aor,
             peer: message.request.from.uri.toString(),
             senderName: message.request.from.displayName,
@@ -354,7 +349,7 @@ export class SipClient {
     this.requireRegistered()
     if (!body.trim()) throw new Error('Nhập nội dung tin nhắn.')
     const uri = sipAddress(target, this.domain)
-    const id = crypto.randomUUID()
+    const id = createLocalId()
     this.onMessage({
       id,
       account: this.aor,

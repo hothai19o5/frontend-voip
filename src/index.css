@@ -645,7 +645,7 @@ svg {
   letter-spacing: 0.4px;
 }
 
-/* Always mounted call panel and media: route changes never move these nodes. */
+/* SIP media stays mounted in the opener; the call view can move to a portal. */
 .call-panel {
   position: fixed;
   bottom: 30px;
@@ -804,6 +804,63 @@ svg {
 }
 .with-video .call-indicator {
   margin-top: 8px;
+}
+.call-window-action {
+  width: 100%;
+  margin-top: 12px;
+  font-size: 12px;
+}
+.call-error {
+  margin-bottom: 16px;
+  color: #b42334;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.call-detached-bar {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+.call-window-body {
+  margin: 0;
+  background: #f5f5f5;
+  overflow: auto;
+}
+.call-window-root {
+  min-height: 100svh;
+  display: grid;
+  align-items: center;
+  padding: 20px;
+}
+.call-window-root > .call-panel {
+  position: static;
+  width: 100%;
+  max-width: 800px;
+  max-height: none;
+  margin: auto;
+  box-shadow: none;
+}
+.call-window-root .call-video-stage {
+  height: clamp(180px, 45svh, 480px);
+}
+.call-window-root .local-video {
+  width: 24%;
+  height: 30%;
+}
+.call-window-root .call-controls {
+  flex-wrap: wrap;
 }
 
 /* Full viewport workspace. The sidebar is separate from the three islands. */

@@ -20,6 +20,26 @@ change `API_PROXY_TARGET` in `.env` for another backend. SIP credentials and the
 WSS URL come from authenticated `GET /api/v1/sip/account`, never from browser
 configuration. Keep secrets out of `VITE_*` variables.
 
+### Access from other devices on the LAN
+
+`npm run dev` listens on all network interfaces at port `5173`. On another
+device on the same network, open `http://<frontend-machine-LAN-IP>:5173`.
+Use `ipconfig` on the frontend machine to find its active adapter's IPv4 address.
+Restart an already-running Vite process after changing its configuration.
+
+Keep `VITE_API_BASE_URL` empty so browser API requests use `/api` through Vite;
+`API_PROXY_TARGET=http://localhost:8080` still refers to the backend on the
+frontend machine. Allow inbound TCP `5173` on the Windows Firewall private
+network profile if other devices cannot connect.
+
+After `npm run build`, `npm run preview` also listens on all interfaces at
+`http://<frontend-machine-LAN-IP>:4173`. Preview does not proxy `/api`; use a
+reachable backend URL with matching CORS or a production reverse proxy.
+
+HTTP access through a LAN IP can display the app, but microphone/camera calls
+require HTTPS with a certificate trusted by each client device. The PBX WSS
+endpoint must also be reachable and trusted from those devices.
+
 For production, leave `VITE_API_BASE_URL` empty and reverse-proxy `/api`, or set it
 to the backend HTTPS origin and allow the exact frontend origin in backend CORS.
 Serve `index.html` for `/login`, `/register` and `/messages`. Other paths redirect
@@ -69,6 +89,26 @@ recreate the SIP user agent. App authentication, SIP registration and call state
 remain separate internally. Communication failure leaves app login and search
 usable. Reconnect fetches fresh credentials and is blocked during an active call.
 
+### Detached call window
+
+Outgoing calls open a separate call window directly from the click. Incoming
+calls also attempt to open it; when the browser blocks popups, the inline call
+panel remains available with **Mở cửa sổ cuộc gọi**. The main window offers
+**Xem cuộc gọi** and **Đưa về đây** while the panel is detached.
+
+The call window is an empty same-origin document populated by a React portal.
+It shares the opener's context and callbacks; it never boots another app,
+fetches SIP credentials or creates/registers a SIP client. SIP.js and the audio
+element stay in the main window. Video views share the existing media streams,
+without cloning or stopping their tracks when the view moves.
+
+Closing the call window returns the controls to the main window and keeps the
+call running. Ending/rejecting/cancelling a call closes its detached window.
+Logout, session expiry and closing/reloading the main window also dispose of
+the child window; the call cannot outlive the main app. Popup presentation as a
+window or tab depends on the browser. This does not remove the HTTPS requirement
+for microphone/camera on LAN devices.
+
 Expiry is checked by timer and focus/visibility changes. Authenticated HTTP 401
 invalidates only the token used by that request. Logout immediately clears local
 identity, pending requests, SIP/media, history and drafts while asking the backend
@@ -103,6 +143,14 @@ the real frontend and SIP.js, the contract-based HTTP mock and a local SIP proxy
 It starts/stops owned services on `14020`, `15061`, `15173`; it does not touch the
 normal app on `5173`, live accounts or PBX extensions. Reports/screenshots are in
 gitignored `output/playwright/`.
+
+The runner covers blocked-popup inline behavior in `verify-frontend.mjs`, then
+real detached windows in `verify-call-window.mjs`: incoming/outgoing controls,
+duration, audio/video, moving the view without replacing streams or registering
+again, decline/cancel/end, and logout cleanup. Call-window screenshots and the
+dedicated `call-window-results.json` report are written to the same output folder.
+Pass `-CallWindowOnly` to the PowerShell runner to run only the detached-window
+scenarios, including child reload and main-app reload cleanup.
 
 The reusable Postman simulation is based on `../backend-voip/docs/openapi.yaml`.
 Use `-UsePostman` to run it through the CLI. CLI 1.74.0's dataset daemon crashes

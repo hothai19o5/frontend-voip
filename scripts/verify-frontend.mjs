@@ -105,7 +105,14 @@ async function connected(page) {
     25000,
   )
 }
-const ctx = await browser.newContext(contextOptions)
+// This suite covers the inline fallback when automatic popups are blocked.
+// verify-call-window.mjs separately exercises real detached windows.
+async function inlineContext() {
+  const context = await browser.newContext(contextOptions)
+  await context.addInitScript(() => { window.open = () => null })
+  return context
+}
+const ctx = await inlineContext()
 const page = await ctx.newPage()
 page.on('pageerror', (error) => errors.push(error.message))
 let peer
@@ -288,7 +295,7 @@ try {
       await dialog.waitFor({ state: 'hidden' })
     },
   )
-  const ctx2 = await browser.newContext(contextOptions)
+  const ctx2 = await inlineContext()
   peer = await ctx2.newPage()
   peer.on('pageerror', (error) => errors.push(error.message))
   await login(peer, 'member01')
@@ -534,7 +541,7 @@ try {
   await check(
     '401 during an active call tears down identity, media and in-session data',
     async () => {
-      const incomingCtx = await browser.newContext(contextOptions)
+      const incomingCtx = await inlineContext()
       const incoming = await incomingCtx.newPage()
       await login(incoming, 'member01')
       await page
@@ -598,7 +605,7 @@ try {
     async () => {
       const token = await login(page)
       await selectPerson(page)
-      const incomingCtx = await browser.newContext(contextOptions)
+      const incomingCtx = await inlineContext()
       const incoming = await incomingCtx.newPage()
       await login(incoming, 'member01')
       await page

@@ -5,9 +5,10 @@ import {
   MicOff,
   Phone,
   PhoneOff,
-  Play,
   Video,
   VideoOff,
+  ExternalLink,
+  ArrowDownLeft,
 } from 'lucide-react'
 import { Brand, PersonAvatar } from '../../components/app-ui'
 import { Button } from '../../components/ui/button'
@@ -30,7 +31,15 @@ function Duration({ since }: { since: number | null }) {
   )
 }
 
-export function CallPanel({ children }: { children: ReactNode }) {
+export function CallPanel({
+  children,
+  detached,
+  onWindow,
+}: {
+  children: ReactNode
+  detached: boolean
+  onWindow: () => void
+}) {
   const sip = useSip()
   const { state } = sip
   const peer = state.peer.replace(/^sip:/, '').split('@')[0]
@@ -48,6 +57,10 @@ export function CallPanel({ children }: { children: ReactNode }) {
         <Brand small />
         <span>{state.offeredVideo ? 'Cuộc gọi video' : 'Cuộc gọi thoại'}</span>
       </div>
+      <Button variant="ghost" className="call-window-action" onClick={onWindow}>
+        {detached ? <ArrowDownLeft /> : <ExternalLink />}
+        {detached ? 'Đưa về cửa sổ chính' : 'Mở cửa sổ cuộc gọi'}
+      </Button>
       <div className="call-person">
         <PersonAvatar name={name || '?'} large />
         <h2>{name}</h2>
@@ -59,6 +72,11 @@ export function CallPanel({ children }: { children: ReactNode }) {
         </div>
       </div>
       {children}
+      {sip.error ? (
+        <p className="call-error" role="alert">
+          {sip.error}
+        </p>
+      ) : null}
       {state.call === 'incoming' ? (
         <div className="incoming-actions">
           <Button
@@ -107,16 +125,6 @@ export function CallPanel({ children }: { children: ReactNode }) {
               >
                 {state.cameraOff ? <VideoOff /> : <Video />}
                 {state.cameraOff ? 'Bật camera' : 'Tắt camera'}
-              </Button>
-            ) : null}
-            {state.call === 'active' ? (
-              <Button
-                variant="ghost"
-                onClick={() => void sip.replay()}
-                title="Phát lại âm thanh và video nếu trình duyệt chặn tự phát"
-              >
-                <Play />
-                Phát lại
               </Button>
             ) : null}
           </div>
