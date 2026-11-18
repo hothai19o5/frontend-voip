@@ -28,6 +28,19 @@ assumptions:
       check that stale unauthorized results do not invalidate a newer token.
     source: scripts/verify-frontend.mjs; tests/session-store.test.js; src/features/auth/session-store.ts; src/features/sip/sip-provider.tsx
     updated_at: '2026-11-17'
+  - id: session-restoration
+    status: supported
+    claim: The frontend uses the stored bearer token with GET /api/v1/users/me before resuming the app after a reload.
+    reason: The backend contract returns the current profile for an active token and HTTP 401 for an invalid token.
+    verification: >-
+      On 2026-11-18, verify-frontend.mjs used headless Chrome and the portable
+      contract mock to verify the bearer request, server profile replacing cached
+      profile data, local rejection of expired or malformed records and cleanup
+      after revoked-token HTTP 401. An intercepted network failure and HTTP 503
+      preserved the saved session, and reconnect and manual retry restored it.
+      These checks cover the caller against modeled responses.
+    source: scripts/verify-frontend.mjs; src/features/auth/session-restore.tsx; ../backend-voip/docs/openapi.yaml
+    updated_at: '2026-11-18'
   - id: live-pbx-interop
     status: unknown
     claim: The frontend can register and exchange voice/video with the user's deployed FusionPBX and Linphone configuration.

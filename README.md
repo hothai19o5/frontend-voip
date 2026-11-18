@@ -106,9 +106,13 @@ sticker art is displayed.
 
 ### Authentication and persistence
 
-Tokens, SIP secrets and drafts stay in RAM. **Reloading/closing the tab requires
-a new login and can end the call.** Saved message history is restored from the
-backend after login. There is no browser storage or refresh-token flow.
+Login saves the app access token, expiration and profile fields in the tab's
+`sessionStorage`. On reload, the app checks the expiration and calls
+`GET /api/v1/users/me` before opening Messages. Temporary verification errors
+keep the saved session available for retry. The app retries when connectivity
+returns, and the user can also select **Thử lại**. Login and SIP passwords stay
+out of browser storage. Saved message history loads from the backend when the
+app opens Messages.
 
 Messages between web accounts are stored in plaintext in PostgreSQL for both
 participants before the sender sees success. Offline recipients see the message
@@ -148,10 +152,11 @@ the child window; the call cannot outlive the main app. Popup presentation as a
 window or tab depends on the browser. This does not remove the HTTPS requirement
 for microphone/camera on LAN devices.
 
-Expiry is checked by timer and focus/visibility changes. Authenticated HTTP 401
-invalidates only the token used by that request. Logout immediately clears local
-identity, pending requests, SIP/media, in-memory history and drafts while asking the backend
-to revoke the captured token. Failed remote revocation is reported by toast.
+Expiry is checked by timer and focus/visibility changes. Expiry, logout and an
+authenticated HTTP 401 for the current token clear the session from RAM and
+`sessionStorage`. Logout immediately clears local identity, pending requests,
+SIP/media, in-memory history and drafts while asking the backend to revoke the
+captured token. A toast reports failed remote revocation.
 
 ## Source layout
 
@@ -163,7 +168,7 @@ to revoke the captured token. Failed remote revocation is reported by toast.
 | `src/components/toast-*`, `session-notifications.tsx` | Global toast lifecycle and auth-session notifications                 |
 | `src/index.css`                                       | Shared tokens, auth/call styles and Messenger islands                 |
 | `src/lib/brand.ts`, `contracts.ts`, `api.ts`          | Product identity, backend DTOs and HTTP handling                      |
-| `src/features/auth/`                                  | In-memory identity, auth forms and protected layout                   |
+| `src/features/auth/`                                  | Session storage and verification, auth forms and protected layout    |
 | `src/features/users/`                                 | Integrated people picker and abortable search hook                    |
 | `src/features/messages/`                              | Conversations, drafts, primary screen and person/shared-content panel |
 | `src/features/sip/`                                   | Typed context, provider and POC calling/media adapter                 |
@@ -194,7 +199,7 @@ scenarios, including child reload and main-app reload cleanup.
 Pass `-ExpressionsOnly` to run seven emoji/emote/sticker groups, including caret
 insertion, search/keyboard access, two-way send/history, fallback, mock attachments,
 four responsive widths and failure/retry. Screenshots are `expressions-*.png`.
-Pass `-HistoryOnly` to verify two-way SIP saves, reload/login, write retry,
+Pass `-HistoryOnly` to verify two-way SIP saves, reload and subsequent login, write retry,
 pagination, read retry, the live-message/HTTP snapshot race and offline web chat.
 
 The reusable Postman simulation is based on `../backend-voip/docs/openapi.yaml`.
@@ -202,11 +207,11 @@ Use `-UsePostman` to run it through the CLI. CLI 1.74.0's dataset daemon crashes
 while initializing `pm.state` on this Windows environment, so the default runner
 uses the same handler with a portable RAM adapter. No mock/workspace is published.
 
-Validated 2026-11-18: build, 45 unit tests and 36 browser scenario groups (16 app,
-7 history, 7 expressions, 6 detached-call groups) covering
-island layout (1577/1440/1024/768/390), sidebar/account menu, picker search/paging,
-toasts, SIP MESSAGE, failed sends/drafts, voice/video, mic/camera, reconnect,
-active-call 401/logout, token expiry and local-state cleanup. No browser page
-errors; lint has no errors and three existing shadcn/mobile-hook warnings.
+On 2026-11-18, the build, 49 unit tests and 41 browser scenario groups passed
+(20 app, 7 history, 7 expressions, 7 detached-call groups). They covered session
+restoration and retry, expired and revoked tokens, island layout
+(1577/1440/1024/768/390), account menu, picker search and paging, SIP MESSAGE,
+failed sends and drafts, voice and video calls, and active-call cleanup. Lint
+reported three existing shadcn/mobile-hook warnings.
 Local browser checks do not establish deployed TLS, NAT/RTP, FusionPBX/Linphone
 interop or physical-device playback; those still require a live test.

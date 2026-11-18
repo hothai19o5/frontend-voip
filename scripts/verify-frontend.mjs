@@ -7,6 +7,8 @@ const base = process.env.TEST_FRONTEND_URL || 'http://127.0.0.1:5173'
 const controlUrl =
   process.env.TEST_CONTROL_URL || 'http://127.0.0.1:14020/voip/__control'
 const output = new URL('../output/playwright/', import.meta.url)
+const sessionKey = 'voip:session:v1'
+const mePath = '**/api/v1/users/me'
 await mkdir(output, { recursive: true })
 const proxy = createSipProxy()
 const browser = await chromium
@@ -57,12 +59,16 @@ async function shot(page, name) {
     fullPage: true,
   })
 }
+function readSession(page) {
+  return page.evaluate((key) => sessionStorage.getItem(key), sessionKey)
+}
 async function logout(page) {
   await page
     .getByRole('button', { name: 'Menu tài khoản', exact: true })
     .click()
   await page.getByRole('menuitem', { name: 'Đăng xuất', exact: true }).click()
   await page.waitForURL('**/login')
+  assert.equal(await readSession(page), null)
 }
 async function login(page, username = 'alice', ready = true) {
   await page.goto(`${base}/login`)
@@ -177,6 +183,132 @@ try {
       await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
       await page.waitForURL('**/messages')
       await logout(page)
+    },
+  )
+  const aliceToken = await login(page)
+  await check(
+    'refresh verifies the stored token and restores server profile without storing passwords',
+    async () => {
+      const stored = await page.evaluate((key) => {
+        const session = JSON.parse(sessionStorage.getItem(key))
+        sessionStorage.setItem(
+          key,
+          JSON.stringify({
+            ...session,
+            user: { ...session.user, displayName: 'Hồ sơ cũ' },
+          }),
+        )
+        return session
+      }, sessionKey)
+      assert.equal(stored.accessToken, aliceToken)
+      assert.ok(Date.parse(stored.expiresAt) > Date.now())
+      assert.deepEqual(Object.keys(stored).sort(), ['accessToken', 'expiresAt', 'user'])
+      assert.deepEqual(Object.keys(stored.user).sort(), [
+        'createdAt', 'displayName', 'email', 'id', 'role', 'status', 'username',
+      ])
+
+      const { promise: pending, resolve: releaseVerification } =
+        Promise.withResolvers()
+      const pauseVerification = async (route) => {
+        await pending
+        await route.continue()
+      }
+      await page.route(mePath, pauseVerification)
+      const verified = page.waitForResponse((response) =>
+        response.url().endsWith('/api/v1/users/me') && response.ok(),
+      )
+      try {
+        await page.reload()
+        await page.getByText('Đang xác minh phiên đăng nhập…').waitFor()
+        assert.equal(await page.getByRole('button', { name: 'Menu tài khoản' }).count(), 0)
+        assert.equal(await page.getByLabel('Mật khẩu', { exact: true }).count(), 0)
+      } finally {
+        releaseVerification()
+      }
+      assert.equal(
+        (await verified).request().headers().authorization,
+        `Bearer ${aliceToken}`,
+      )
+      await page.getByRole('button', { name: 'Menu tài khoản' }).waitFor()
+      await page.unroute(mePath, pauseVerification)
+      assert.equal(
+        JSON.parse(await readSession(page)).user.displayName,
+        stored.user.displayName,
+      )
+    },
+  )
+  await check(
+    'network and service failures preserve the stored session for reconnect and manual retry',
+    async () => {
+      const stored = await readSession(page)
+      const error = page
+        .getByRole('alert')
+        .filter({ hasText: 'Chưa xác minh được phiên đăng nhập' })
+      const account = page.getByRole('button', { name: 'Menu tài khoản' })
+      const failVerification = (route) => route.abort('internetdisconnected')
+      await page.route(mePath, failVerification)
+      await page.reload()
+      await error.waitFor()
+      assert.equal(await readSession(page), stored)
+      assert.equal(await account.count(), 0)
+      await page.unroute(mePath, failVerification)
+      await ctx.setOffline(true)
+      await page.waitForFunction(() => !navigator.onLine)
+      await ctx.setOffline(false)
+      await account.waitFor()
+
+      const unavailable = (route) => route.fulfill({ status: 503, json: {} })
+      await page.route(mePath, unavailable)
+      await page.reload()
+      await error.waitFor()
+      assert.equal(await readSession(page), stored)
+      await page.unroute(mePath, unavailable)
+      await page.getByRole('button', { name: 'Thử lại', exact: true }).click()
+      await account.waitFor()
+    },
+  )
+  await check(
+    'expired or malformed storage is discarded locally and a revoked token is cleared on restore',
+    async () => {
+      const stored = await readSession(page)
+      const expired = { ...JSON.parse(stored), expiresAt: new Date(0).toISOString() }
+      let requests = 0
+      const countVerification = (route) => {
+        requests++
+        return route.continue()
+      }
+      await page.route(mePath, countVerification)
+      for (const raw of [JSON.stringify(expired), '{']) {
+        await page.evaluate(({ key, raw }) => sessionStorage.setItem(key, raw), {
+          key: sessionKey,
+          raw,
+        })
+        await page.goto(`${base}/messages`)
+        await page.waitForURL('**/login')
+        assert.equal(await readSession(page), null)
+      }
+      assert.equal(requests, 0)
+      await page.unroute(mePath, countVerification)
+
+      const revoked = await fetch(
+        controlUrl.replace('/__control', '/api/v1/auth/logout'),
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${aliceToken}` },
+        },
+      )
+      assert.equal(revoked.status, 204)
+      await page.evaluate(({ key, stored }) => sessionStorage.setItem(key, stored), {
+        key: sessionKey,
+        stored,
+      })
+      const unauthorized = page.waitForResponse((response) =>
+        response.url().endsWith('/api/v1/users/me') && response.status() === 401,
+      )
+      await page.goto(`${base}/messages`)
+      await unauthorized
+      await page.waitForURL('**/login')
+      assert.equal(await readSession(page), null)
     },
   )
   await login(page)
@@ -599,6 +731,7 @@ try {
       await control({ ttlMs: 2500 })
       await login(page)
       await page.waitForURL('**/login', { timeout: 10000 })
+      assert.equal(await readSession(page), null)
       await until(() => proxy.accounts.size === 0)
       await page.locator('.toast').filter({ hasText: 'hết hạn' }).waitFor()
       await control({ ttlMs: 3600000 })

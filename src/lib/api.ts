@@ -105,9 +105,9 @@ export async function request<T>(
     )
   }
   if (!response.ok) {
-    const problem = await response.json().catch(() => ({}))
     if (response.status === 401 && options.token)
       sessionStore.expire(options.token)
+    const problem = await response.json().catch(() => ({}))
     throw new ApiError(
       response.status,
       problem.code ?? 'REQUEST_FAILED',

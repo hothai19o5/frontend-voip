@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthPage } from './features/auth/auth-page'
+import { SessionRestore } from './features/auth/session-restore'
 import { useSession } from './features/auth/use-session'
 import { sessionStore } from './features/auth/session-store'
 import { Loading } from './components/app-ui'
@@ -16,14 +17,19 @@ const MessagesPage = lazy(() =>
 )
 
 export default function App() {
-  const { session } = useSession()
+  const { session, pendingSession } = useSession()
+  const currentSession = session ?? pendingSession
   useEffect(() => {
-    if (!session) return
-    const check = () => sessionStore.checkExpiry()
-    const timer = setTimeout(
-      check,
-      Math.max(0, Date.parse(session.expiresAt) - Date.now()),
-    )
+    if (!currentSession) return
+    const expiresAt = Date.parse(currentSession.expiresAt)
+    let timer: ReturnType<typeof setTimeout>
+    const check = () => {
+      clearTimeout(timer)
+      const remaining = expiresAt - Date.now()
+      if (remaining <= 0) sessionStore.checkExpiry()
+      else timer = setTimeout(check, Math.min(remaining, 2_147_483_647))
+    }
+    check()
     window.addEventListener('focus', check)
     document.addEventListener('visibilitychange', check)
     return () => {
@@ -31,7 +37,9 @@ export default function App() {
       window.removeEventListener('focus', check)
       document.removeEventListener('visibilitychange', check)
     }
-  }, [session])
+  }, [currentSession])
+  if (pendingSession) return <SessionRestore pending={pendingSession} />
+
   return (
     <ToastProvider>
       <SessionNotifications />

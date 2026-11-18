@@ -140,8 +140,6 @@ try {
         .getByLabel('Nội dung tin nhắn', { exact: true })
         .fill('Bản nháp không lưu')
       await page.reload()
-      await page.waitForURL('**/login')
-      token = await login(page)
       await page.locator('.message-body').filter({ hasText: text }).waitFor()
       assert.equal(await page.locator('.chat-message').count(), 2)
       assert.equal(
@@ -307,9 +305,9 @@ try {
       const bodies = await page.locator('.message-body').allTextContents()
       assert.equal(bodies.length, 4)
       assert.equal(new Set(bodies).size, 4)
-      assert.equal(
-        await page.evaluate(() => localStorage.length + sessionStorage.length),
-        0,
+      assert.deepEqual(
+        await page.evaluate(() => [...Object.keys(localStorage), ...Object.keys(sessionStorage)]),
+        ['voip:session:v1'],
       )
       await page.screenshot({
         path: new URL('message-history-1440.png', output).pathname.replace(

@@ -41,15 +41,12 @@ async function until(check, timeout = 25000) {
     await new Promise((resolve) => setTimeout(resolve, 80))
   }
 }
-async function submitLogin(page, username, destination) {
+async function login(page, username) {
+  await page.goto(`${base}/login`)
   await page.getByLabel('Tên đăng nhập', { exact: true }).fill(username)
   await page.getByLabel('Mật khẩu', { exact: true }).fill('test-password')
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
-  await page.waitForURL((url) => url.pathname === `/${destination}`)
-}
-async function login(page, username) {
-  await page.goto(`${base}/login`)
-  await submitLogin(page, username, 'messages')
+  await page.waitForURL('**/messages')
 }
 async function selectPeer() {
   await main
@@ -284,7 +281,7 @@ try {
     },
   )
   await check(
-    'call cards appear with messages, update chat previews and survive a fresh login',
+    'call cards appear with messages, update chat previews and survive a reload',
     async () => {
       const aliceChat = peer.locator('.conversation-item').filter({ hasText: 'Nguyễn Minh Anh' })
       await aliceChat.click()
@@ -335,8 +332,6 @@ try {
       unchanged()
 
       await peer.reload()
-      await peer.waitForURL('**/login')
-      await submitLogin(peer, 'member01', 'messages')
       await until(() => proxy.accounts.size === 2)
       await aliceChat.click()
       await until(async () => (await missedCards.count()) === 2)
@@ -366,7 +361,7 @@ try {
     },
   )
   await check(
-    'reloading the main app closes its child and returns to login',
+    'reloading the main app closes its child and restores login',
     async () => {
       await login(main, 'alice')
       await until(() => proxy.accounts.size === 2)
@@ -374,9 +369,15 @@ try {
       const [caller, callee] = await start()
       await answer(caller, callee)
       await main.reload()
-      await main.waitForURL('**/login')
+      await main.getByRole('button', { name: 'Menu tài khoản', exact: true }).waitFor()
       await until(() => caller.isClosed())
-      assert.equal(await main.locator('audio, video').count(), 0)
+      await main.locator('.call-panel').waitFor({ state: 'hidden' })
+      assert.equal(
+        await main.locator('audio, video').evaluateAll((elements) =>
+          elements.every((element) => element.srcObject === null),
+        ),
+        true,
+      )
       if (!callee.isClosed()) {
         await callee
           .getByRole('button', { name: 'Kết thúc cuộc gọi', exact: true })

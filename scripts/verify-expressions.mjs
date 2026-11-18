@@ -210,8 +210,6 @@ try {
           ).length === 2,
       )
       await page.reload()
-      await page.waitForURL('**/login')
-      token = await login(page)
       await page
         .getByRole('img', { name: 'Sticker Xin chào', exact: true })
         .waitFor()
@@ -267,8 +265,6 @@ try {
         [390, 844],
       ]) {
         await page.setViewportSize({ width, height })
-        if (width === 390)
-          await page.locator('.conversation-item').first().click()
         await open(page, 'Sticker')
         const box = await picker().boundingBox()
         assert.ok(
