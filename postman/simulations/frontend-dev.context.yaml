@@ -97,6 +97,18 @@ assumptions:
       existing portable HTTP handler and SIP proxy; deployed PBX is unverified.
     source: scripts/verify-expressions.mjs; src/features/messages/message-content.ts; src/features/messages/message-composer.tsx; src/assets/stickers/README.md
     updated_at: '2026-11-18'
+  - id: offline-web-chat
+    status: supported
+    claim: A recipient who is signed out or disconnected sees stored web messages after login or reconnect.
+    reason: The webChat control enables the modeled direct-send and sequence-based updates. Existing SIP scenarios exercise the SIP_ONLY fallback.
+    verification: >-
+      Chrome with the portable HTTP handler and disabled SIP registration
+      verified sending to a signed-out recipient, history on login, a lost
+      send response followed by an idempotent retry, and sync on reconnect.
+      A separate executable-backend run with PostgreSQL checked the recipient's
+      first login after a backend restart.
+    source: scripts/verify-history.mjs, postman/mocks/voip/default.cjs, ../backend-voip/scripts/run-history-verification.ps1
+    updated_at: '2026-11-18'
 fingerprints:
   - id: frontend-implementation-2026-11-17
     date: '2026-11-17'

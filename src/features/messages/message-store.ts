@@ -2,6 +2,7 @@ import type { DirectoryUser } from '../../lib/contracts'
 
 export interface ChatMessage {
   id: string
+  sequence?: string
   account: string
   peer: string
   direction: 'incoming' | 'outgoing'
@@ -43,6 +44,7 @@ export type MessageAction =
   | { type: 'read'; peer: string }
   | { type: 'draft'; peer: string; value: string; expected?: string }
   | { type: 'history-list'; conversations: HistoryConversation[] }
+  | { type: 'history-updates'; messages: HistoryEntry[] }
   | { type: 'history'; peer: string; page: HistoryPage<HistoryEntry> }
   | { type: 'history-save'; id: string; status: ChatMessage['historyState'] }
 
@@ -56,6 +58,31 @@ export function normalizePeer(value: string) {
 }
 export function extensionOf(peer: string) {
   return peer.replace(/^sips?:/i, '').split('@')[0]
+}
+
+function groupUpdates(messages: HistoryEntry[]) {
+  const groups = new Map<
+    string,
+    { peer: string; name: string; messages: HistoryEntry[] }
+  >()
+  for (const message of messages) {
+    const peer = normalizePeer(message.peer)
+    const group = groups.get(peer)
+    if (group) group.messages.push(message)
+    else groups.set(peer, { peer, name: message.name, messages: [message] })
+  }
+  return groups.values()
+}
+
+function compareMessages(a: ChatMessage, b: ChatMessage) {
+  if (a.time !== b.time) return a.time - b.time
+  const left = a.sequence ?? ''
+  const right = b.sequence ?? ''
+  return (
+    left.length - right.length ||
+    left.localeCompare(right) ||
+    a.id.localeCompare(b.id)
+  )
 }
 
 export function messageReducer(
@@ -80,7 +107,11 @@ export function messageReducer(
     }
     return state
   }
-  if (action.type === 'history-list' || action.type === 'history') {
+  if (
+    action.type === 'history-list' ||
+    action.type === 'history' ||
+    action.type === 'history-updates'
+  ) {
     const next = { ...state }
     const entries =
       action.type === 'history-list'
@@ -89,18 +120,19 @@ export function messageReducer(
             name: item.name,
             messages: [item.lastMessage],
           }))
-        : [
-            {
-              peer: action.peer,
-              name: action.page.content[0]?.name,
-              messages: action.page.content,
-            },
-          ]
+        : action.type === 'history-updates'
+          ? groupUpdates(action.messages)
+          : [
+              {
+                peer: action.peer,
+                name: action.page.content[0]?.name,
+                messages: action.page.content,
+              },
+            ]
     for (const entry of entries) {
       const peer = normalizePeer(entry.peer)
       const previous = next[peer]
-      // Current messages win over an older HTTP snapshot. Hydration never adds
-      // unread counts or overwrites a draft while the user is typing.
+      // Preserve live status and drafts when an HTTP snapshot overlaps local state.
       const messages = new Map<string, ChatMessage>(
         entry.messages.map((message) => [
           message.id,
@@ -112,6 +144,15 @@ export function messageReducer(
           },
         ]),
       )
+      let unread = 0
+      if (action.type === 'history-updates') {
+        const existing = new Set(
+          previous?.messages.map((message) => message.id),
+        )
+        for (const message of messages.values())
+          if (message.direction === 'incoming' && !existing.has(message.id))
+            unread++
+      }
       for (const message of previous?.messages ?? []) {
         const fetched = messages.get(message.id)
         // A previously restored pending record can later acquire a final result
@@ -129,12 +170,10 @@ export function messageReducer(
         ...(previous ?? {
           peer,
           name: entry.name || `Máy nhánh ${extensionOf(peer)}`,
-          unread: 0,
           draft: '',
         }),
-        messages: [...messages.values()].sort(
-          (a, b) => a.time - b.time || a.id.localeCompare(b.id),
-        ),
+        unread: (previous?.unread ?? 0) + unread,
+        messages: [...messages.values()].sort(compareMessages),
         ...(action.type === 'history'
           ? { historyLoaded: true, historyCursor: action.page.nextCursor }
           : {}),

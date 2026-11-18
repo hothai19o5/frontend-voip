@@ -56,7 +56,7 @@ async function api(path, accessToken, body) {
   assert.equal(response.status, 200)
   return response.json()
 }
-async function login(p, username = 'alice') {
+async function login(p, username = 'alice', registered = true) {
   await p.goto(`${base}/login`)
   await p.getByLabel('Tên đăng nhập', { exact: true }).fill(username)
   await p.getByLabel('Mật khẩu', { exact: true }).fill('test-password')
@@ -66,9 +66,10 @@ async function login(p, username = 'alice') {
   await p.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
   const session = await (await response).json()
   await p.waitForURL('**/messages')
-  await until(() =>
-    proxy.accounts.has(`${session.user.sip.extension}@pbx.test`),
-  )
+  if (registered)
+    await until(() =>
+      proxy.accounts.has(`${session.user.sip.extension}@pbx.test`),
+    )
   return session.accessToken
 }
 async function select(p, name) {
@@ -331,6 +332,75 @@ try {
         ),
         fullPage: true,
       })
+    },
+  )
+  await check(
+    'web chat stores offline messages, syncs after reconnect, and retries a lost response once',
+    async () => {
+      await logout(page)
+      await logout(peer)
+      await until(() => proxy.accounts.size === 0)
+      await page.setViewportSize({ width: 1440, height: 900 })
+      await control({ reset: true, webChat: true, sipError: true })
+      token = await login(page, 'alice', false)
+      await select(page, 'Trần Hoàng Nam')
+      const before = proxy.stats.messages
+      const offline = 'Tin gửi khi bạn đã đăng xuất 👋'
+      await send(page, offline)
+      peerToken = await login(peer, 'member01', false)
+      await peer
+        .locator('.incoming-message')
+        .getByText(offline, { exact: true })
+        .waitFor()
+
+      await ctx2.setOffline(true)
+      const pending = 'Tin gửi khi bạn mất mạng'
+      await page.route(
+        '**/api/v1/message-history/send/*',
+        async (route) => {
+          assert.equal((await route.fetch()).status(), 200)
+          await route.abort('failed')
+        },
+        { times: 1 },
+      )
+      const draft = page.getByLabel('Nội dung tin nhắn', { exact: true })
+      await draft.fill(pending)
+      await page
+        .getByRole('button', { name: 'Gửi tin nhắn', exact: true })
+        .click()
+      await page
+        .getByText(
+          'Không kết nối được máy chủ. Vui lòng kiểm tra kết nối mạng.',
+          { exact: true },
+        )
+        .waitFor()
+      assert.equal(await draft.inputValue(), pending)
+      await send(page, pending)
+      assert.equal(
+        await page
+          .locator('.outgoing-message')
+          .getByText(pending, { exact: true })
+          .count(),
+        1,
+      )
+      await ctx2.setOffline(false)
+      await peer.bringToFront()
+      await peer
+        .locator('.incoming-message')
+        .getByText(pending, { exact: true })
+        .waitFor()
+      assert.equal(await peer.locator('.incoming-message').count(), 2)
+      assert.equal(
+        (
+          await api(
+            '/message-history/messages?peer=sip:1001@pbx.test',
+            peerToken,
+          )
+        ).content.length,
+        2,
+      )
+      assert.equal(proxy.stats.messages, before)
+      assert.equal(proxy.accounts.size, 0)
     },
   )
   assert.deepEqual(errors, [])

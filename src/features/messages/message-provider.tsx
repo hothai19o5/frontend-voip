@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { AppSession } from '../../lib/contracts'
-import { api, errorMessage } from '../../lib/api'
+import { api, ApiError, errorMessage } from '../../lib/api'
+import { createLocalId } from '../../lib/local-id'
 import { useToast } from '../../components/toast-context'
 import { MessageContext } from './message-context'
 import { messageReducer, normalizePeer } from './message-store'
 import type { MessageAction, MessageState } from './message-store'
 import { HistoryWriter } from './history-writer'
+
+const HISTORY_SYNC_INTERVAL = 3000
 
 export function MessageProvider({
   session,
@@ -23,6 +26,8 @@ export function MessageProvider({
   const [historyError, setHistoryError] = useState('')
   const [moreConversations, setMoreConversations] = useState(false)
   const listCursor = useRef<string | null>(null)
+  const syncCursor = useRef<string | null>(null)
+  const requests = useRef(new Map<string, string>())
   const listBusy = useRef(false)
   const [loadingPeers, setLoadingPeers] = useState<Set<string>>(new Set())
   const peerBusy = useRef(new Set<string>())
@@ -32,6 +37,43 @@ export function MessageProvider({
     current.current = messageReducer(current.current, action)
     setConversations(current.current)
   }, [])
+
+  const sendDirect = useCallback(
+    async (peer: string, body: string) => {
+      const abort = lifetime.current
+      if (!abort || abort.signal.aborted)
+        throw new Error('Phiên trò chuyện đã kết thúc.')
+      const key = JSON.stringify([peer, body])
+      const id = requests.current.get(key) ?? createLocalId()
+      requests.current.set(key, id)
+      try {
+        const message = await api.sendDirectMessage(
+          session.accessToken,
+          id,
+          peer,
+          body,
+          abort.signal,
+        )
+        if (requests.current.get(key) === id) requests.current.delete(key)
+        if (!abort.signal.aborted)
+          apply({ type: 'history-updates', messages: [message] })
+        return 'sent'
+      } catch (error) {
+        if (
+          error instanceof ApiError &&
+          error.status === 404 &&
+          error.code === 'SIP_ONLY'
+        ) {
+          if (requests.current.get(key) === id) requests.current.delete(key)
+          return 'sip-only'
+        }
+        // A lost response can mean the message committed. A retry of this draft
+        // reuses the request ID, including after switching conversations.
+        throw error
+      }
+    },
+    [session.accessToken, apply],
+  )
 
   // Stable dispatch is a SIP connection dependency: history must never recreate
   // the SIP client or interrupt calls.
@@ -76,6 +118,7 @@ export function MessageProvider({
       )
       if (abort.signal.aborted) return
       apply({ type: 'history-list', conversations: page.content })
+      syncCursor.current ??= page.content[0]?.lastMessage.sequence ?? '0'
       listCursor.current = page.nextCursor
       setMoreConversations(page.nextCursor !== null)
     } catch (error) {
@@ -145,17 +188,57 @@ export function MessageProvider({
         }),
     )
     writer.current = sync
+    let syncing = false
+    async function syncMessages() {
+      if (
+        abort.signal.aborted ||
+        document.visibilityState !== 'visible' ||
+        !navigator.onLine ||
+        syncing ||
+        syncCursor.current === null
+      )
+        return
+      syncing = true
+      try {
+        let after = syncCursor.current
+        while (!abort.signal.aborted) {
+          const page = await api.historyUpdates(
+            session.accessToken,
+            after,
+            abort.signal,
+          )
+          if (abort.signal.aborted) return
+          const last = page.content.at(-1)
+          if (!last) return
+          apply({ type: 'history-updates', messages: page.content })
+          syncCursor.current = last.sequence
+          if (page.nextCursor === null) return
+          after = page.nextCursor
+        }
+      } catch {
+        // Resume from the last merged page on reconnect or the next interval.
+      } finally {
+        syncing = false
+      }
+    }
     const retry = () => {
       sync.retry()
-      void loadConversations()
+      if (syncCursor.current === null) void loadConversations()
+      else void syncMessages()
     }
+    const timer = window.setInterval(syncMessages, HISTORY_SYNC_INTERVAL)
     window.addEventListener('online', retry)
+    window.addEventListener('focus', syncMessages)
+    document.addEventListener('visibilitychange', syncMessages)
     void loadConversations()
     return () => {
       abort.abort()
       sync.stop()
       writer.current = null
+      window.clearInterval(timer)
       window.removeEventListener('online', retry)
+      window.removeEventListener('focus', syncMessages)
+      document.removeEventListener('visibilitychange', syncMessages)
     }
   }, [session.accessToken, apply, loadConversations, notify])
 
@@ -164,6 +247,7 @@ export function MessageProvider({
       value={{
         conversations,
         dispatch,
+        sendDirect,
         historyLoading,
         historyError,
         moreConversations,

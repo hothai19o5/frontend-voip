@@ -180,6 +180,46 @@ http
     const caller = state.users.find((u) => u.id === session.userId)
     if (path.startsWith('/message-history/')) {
       state.history ||= []
+      if (req.method === 'PUT' && path.startsWith('/message-history/send/')) {
+        const { peer, body: content } = body
+        const id = `chat:${caller.id}:${decodeURIComponent(path.split('/').at(-1))}`
+        const existing = state.history.find(
+          (item) => item.owner === caller.id && item.id === id,
+        )
+        if (existing && (existing.peer !== peer || existing.body !== content)) {
+          await save()
+          return problem(res, 409, 'MESSAGE_CONFLICT')
+        }
+        const address = (user) => `sip:${user.sip.extension}@${user.sip.domain}`
+        // The existing SIP scenarios exercise the fallback explicitly.
+        const recipient = state.control.webChat && state.users.find(
+          (user) => user.sip && address(user) === peer,
+        )
+        if (!recipient) {
+          await save()
+          return problem(res, 404, 'SIP_ONLY')
+        }
+        if (recipient.status !== 'ACTIVE') {
+          await save()
+          return problem(res, 403, 'CHAT_UNAVAILABLE')
+        }
+        const time = Date.now()
+        const message = existing || {
+          id, sequence: String(++state.historySequence), owner: caller.id,
+          account: address(caller), peer, name: recipient.displayName,
+          direction: 'outgoing', body: content, status: 'accepted', time,
+        }
+        if (!existing) {
+          state.history.push(message, {
+            id, sequence: String(++state.historySequence), owner: recipient.id,
+            account: peer, peer: address(caller), name: caller.displayName,
+            direction: 'incoming', body: content, status: 'received', time, senderName: caller.displayName,
+          })
+        }
+        await save()
+        const { owner: _owner, ...result } = message
+        return send(res, 200, result)
+      }
       if (req.method === 'PUT' && path.startsWith('/message-history/messages/')) {
         if (state.control.historyWriteError) { await save(); return problem(res, 503, 'HISTORY_UNAVAILABLE') }
         const id = decodeURIComponent(path.split('/').at(-1))
@@ -193,12 +233,18 @@ http
         return send(res, 200, result)
       }
       if (state.control.historyReadError) { await save(); return problem(res, 503, 'HISTORY_UNAVAILABLE') }
-      const size = Number(url.searchParams.get('size') || 50)
+      const updating = path.endsWith('/updates')
+      const size = Number(url.searchParams.get('size') || (updating ? 100 : 50))
       const before = Number(url.searchParams.get('before') || Number.MAX_SAFE_INTEGER)
       let entries = state.history.filter((item) => item.owner === caller.id).sort((a, b) => Number(b.sequence) - Number(a.sequence))
-      if (path.endsWith('/conversations')) entries = [...new Map(entries.toReversed().map((item) => [item.peer, item])).values()].sort((a, b) => Number(b.sequence) - Number(a.sequence))
-      else entries = entries.filter((item) => item.peer === url.searchParams.get('peer'))
-      entries = entries.filter((item) => Number(item.sequence) < before)
+      if (updating) {
+        const after = Number(url.searchParams.get('after'))
+        entries = entries.filter((item) => Number(item.sequence) > after).reverse()
+      } else {
+        if (path.endsWith('/conversations')) entries = [...new Map(entries.toReversed().map((item) => [item.peer, item])).values()].sort((a, b) => Number(b.sequence) - Number(a.sequence))
+        else entries = entries.filter((item) => item.peer === url.searchParams.get('peer'))
+        entries = entries.filter((item) => Number(item.sequence) < before)
+      }
       const content = entries.slice(0, size).map(({ owner: _owner, ...item }) => path.endsWith('/conversations')
         ? { peer: item.peer, name: item.name, lastMessage: item } : item)
       const nextCursor = entries.length > size ? entries[size - 1].sequence : null

@@ -4,6 +4,7 @@ import { Clock3, ImagePlus, Paperclip, Send } from 'lucide-react'
 import { Button } from '../../components/ui/button'
 import { Input } from '../../components/ui/input'
 import { useToast } from '../../components/toast-context'
+import { errorMessage } from '../../lib/api'
 import { useSip } from '../sip/sip-context'
 import { useMessages } from './message-context'
 import type { Conversation } from './message-store'
@@ -16,7 +17,7 @@ export function MessageComposer({
 }: {
   conversation: Conversation
 }) {
-  const { dispatch } = useMessages()
+  const { dispatch, sendDirect } = useMessages()
   const sip = useSip()
   const notify = useToast()
   const input = useRef<HTMLInputElement>(null)
@@ -52,19 +53,23 @@ export function MessageComposer({
 
   async function sendContent(body: string, clearDraft: boolean) {
     if (!body.trim() || blocked || lock.current) return false
-    if (sip.state.connection !== 'registered') {
-      notify({
-        id: 'communication-not-ready',
-        tone: 'info',
-        message: 'Chưa thể liên lạc lúc này. Vui lòng thử lại.',
-        action: { label: 'Thử lại', onClick: sip.retry },
-      })
-      return false
-    }
     lock.current = true
     setSending(true)
     try {
-      const sent = await sip.sendMessage(conversation.peer, body)
+      const result = await sendDirect(conversation.peer, body)
+      let sent = result === 'sent'
+      if (result === 'sip-only') {
+        if (sip.state.connection !== 'registered') {
+          notify({
+            id: 'communication-not-ready',
+            tone: 'info',
+            message: 'Chưa thể liên lạc lúc này. Vui lòng thử lại.',
+            action: { label: 'Thử lại', onClick: sip.retry },
+          })
+          return false
+        }
+        sent = await sip.sendMessage(conversation.peer, body)
+      }
       if (sent && clearDraft)
         dispatch({
           type: 'draft',
@@ -73,6 +78,13 @@ export function MessageComposer({
           expected: body,
         })
       return sent
+    } catch (error) {
+      notify({
+        id: 'message-send-error',
+        tone: 'error',
+        message: errorMessage(error),
+      })
+      return false
     } finally {
       lock.current = false
       setSending(false)

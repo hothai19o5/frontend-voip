@@ -55,15 +55,15 @@ Microphone/camera require HTTPS or localhost; WSS requires a trusted certificate
 - **Hội thoại mới** opens an integrated, searchable, paginated people picker.
   It excludes the caller, preserves blocked users as disabled entries, aborts
   outdated requests and supports retry. Choosing someone opens the conversation.
-- SIP MESSAGE supports incoming/outgoing text, unread counts and drafts.
-  Transport pending/accepted/failed states are retained; acceptance is not a
-  delivery/read receipt. Failed sends keep the draft. Content renders as text.
+- Web chat supports offline delivery, unread counts and drafts. SIP MESSAGE
+  supports text exchange with external SIP addresses.
+  The accepted state means the backend stored a web message or SIP accepted a
+  SIP MESSAGE. Failed sends keep the draft. Content renders as text.
 - Voice/video calls start inside the conversation or person panel. The persistent
   call panel supports answering (including audio-only), declining, cancelling,
   ending, mic/camera toggles, elapsed time and manual media playback.
 - The right island includes person details plus collapsible shared-photo/file
-  sections. They currently show empty states: the existing transport is text-only
-  SIP MESSAGE and has no file upload/storage endpoint. No mock attachments appear.
+  sections with empty states. Messaging supports text and bundled stickers.
 - Notifications float as Radix toasts, with close, keyboard/swipe support and
   appropriate retry actions. Field validation and message delivery icons remain
   attached to the content they describe. Connection loss offers reconnect through
@@ -85,11 +85,10 @@ supports Vietnamese with or without accents. Emoji-only messages display larger.
 The six built-in **Mầm nhỏ** stickers send immediately while preserving the text
 draft. Failed sends leave the picker open so the user can retry.
 
-Stickers use the existing SIP `text/plain` and history body contract:
-`[[voip:sticker:v1:wave]] 👋 Xin chào!`, with exact known id/fallback combinations
-defined in `message-content.ts`. Updated VoIP clients render the bundled WebP art;
-other SIP clients see readable text. Unknown versions/ids and malformed payloads
-stay plain text. No URL supplied in a message is loaded as sticker artwork.
+The sticker body `[[voip:sticker:v1:wave]] 👋 Xin chào!` works in web chat and in
+SIP `text/plain` messages. Exact known ID and fallback combinations in
+`message-content.ts` render the bundled WebP art in VoIP. Other SIP clients
+display the text body. Unknown versions, IDs, and malformed bodies stay plain text.
 The conversation list shows the sticker's name; saved stickers render after login.
 
 The image/file buttons are intentionally mocks. Clicking shows a toast that the
@@ -104,12 +103,12 @@ Tokens, SIP secrets and drafts stay in RAM. **Reloading/closing the tab requires
 a new login and can end the call.** Saved message history is restored from the
 backend after login. There is no browser storage or refresh-token flow.
 
-SIP MESSAGE remains the transport. Incoming/outgoing messages and SIP outcomes
-are saved through `/api/v1/message-history` to PostgreSQL as each account's own
-history, in plaintext for this development increment. This does not provide
-offline delivery, attachment transfer or read receipts. Opening a thread loads
-50 recent messages, with controls for older messages/conversations. Restored
-pending messages show an unknown sending outcome rather than a false receipt.
+Messages between web accounts are stored in plaintext in PostgreSQL for both
+participants before the sender sees success. Offline recipients see the message
+after login. A visible session syncs every three seconds and checks again on
+focus or network reconnect. Sending to an unmapped SIP address uses SIP MESSAGE.
+Opening a thread loads 50 recent messages, with controls for older messages and
+conversations. Restored pending SIP messages show an unknown sending outcome.
 
 History failures keep messages visible and show a retry action. The queue retries
 on an online event without sending another SIP MESSAGE. Failed saves/drafts are
@@ -188,16 +187,16 @@ scenarios, including child reload and main-app reload cleanup.
 Pass `-ExpressionsOnly` to run seven emoji/emote/sticker groups, including caret
 insertion, search/keyboard access, two-way send/history, fallback, mock attachments,
 four responsive widths and failure/retry. Screenshots are `expressions-*.png`.
-Pass `-HistoryOnly` to run the six history groups: two-way saves, reload/login,
-write retry, pagination, read retry and a live-message/HTTP snapshot race.
+Pass `-HistoryOnly` to verify two-way SIP saves, reload/login, write retry,
+pagination, read retry, the live-message/HTTP snapshot race and offline web chat.
 
 The reusable Postman simulation is based on `../backend-voip/docs/openapi.yaml`.
 Use `-UsePostman` to run it through the CLI. CLI 1.74.0's dataset daemon crashes
 while initializing `pm.state` on this Windows environment, so the default runner
 uses the same handler with a portable RAM adapter. No mock/workspace is published.
 
-Validated 2026-11-18: build, 45 unit tests and 35 browser scenario groups (16 app,
-6 history, 7 expressions, 6 detached-call groups) covering
+Validated 2026-11-18: build, 45 unit tests and 36 browser scenario groups (16 app,
+7 history, 7 expressions, 6 detached-call groups) covering
 island layout (1577/1440/1024/768/390), sidebar/account menu, picker search/paging,
 toasts, SIP MESSAGE, failed sends/drafts, voice/video, mic/camera, reconnect,
 active-call 401/logout, token expiry and local-state cleanup. No browser page

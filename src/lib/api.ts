@@ -35,6 +35,7 @@ const messages: Record<string, string> = {
   TELEPHONY_INVALID_RESPONSE: 'Dịch vụ gọi điện trả về dữ liệu không hợp lệ.',
   TELEPHONY_REJECTED:
     'Dịch vụ gọi điện từ chối yêu cầu. Vui lòng liên hệ quản trị viên.',
+  CHAT_UNAVAILABLE: 'Tài khoản này hiện không thể nhận tin nhắn.',
 }
 
 export class ApiError extends Error {
@@ -148,6 +149,24 @@ export const api = {
       `/message-history/messages?${new URLSearchParams({ peer, size: '50', ...(before ? { before } : {}) })}`,
       { token, signal },
     ),
+  historyUpdates: (token: string, after: string, signal: AbortSignal) =>
+    request<HistoryPage<HistoryEntry>>(
+      `/message-history/updates?${new URLSearchParams({ after })}`,
+      { token, signal },
+    ),
+  sendDirectMessage: (
+    token: string,
+    id: string,
+    peer: string,
+    body: string,
+    signal: AbortSignal,
+  ) =>
+    request<HistoryEntry>(`/message-history/send/${encodeURIComponent(id)}`, {
+      token,
+      method: 'PUT',
+      body: { peer, body },
+      signal,
+    }),
   saveHistory: (token: string, id: string, body: HistoryWrite) =>
     request<HistoryEntry>(
       `/message-history/messages/${encodeURIComponent(id)}`,

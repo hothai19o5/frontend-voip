@@ -5,6 +5,7 @@ import type { MessageAction, MessageState } from './message-store'
 export const MessageContext = createContext<{
   conversations: MessageState
   dispatch: Dispatch<MessageAction>
+  sendDirect: (peer: string, body: string) => Promise<'sent' | 'sip-only'>
   historyLoading: boolean
   historyError: string
   moreConversations: boolean
