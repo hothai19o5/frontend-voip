@@ -62,6 +62,10 @@ Microphone/camera require HTTPS or localhost; WSS requires a trusted certificate
 - Voice/video calls start inside the conversation or person panel. The persistent
   call panel supports answering (including audio-only), declining, cancelling,
   ending, mic/camera toggles, elapsed time and manual media playback.
+- Call cards appear in the conversation timeline with their outcome, duration
+  and a redial button. Call activity updates the chat preview and opening the
+  thread marks its missed calls as seen. Saved calls are restored after login.
+  History covers calls observed by the web SIP client.
 - The right island includes person details plus collapsible shared-photo/file
   sections with empty states. Messaging supports text and bundled stickers.
 - Notifications float as Radix toasts, with close, keyboard/swipe support and

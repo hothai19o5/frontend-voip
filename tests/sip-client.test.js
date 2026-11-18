@@ -59,8 +59,9 @@ function fixture() {
       this.disconnected = true
       this.disconnectCount = (this.disconnectCount || 0) + 1
     }
-    async call(peer, options) {
+    async call(peer, options, inviteOptions) {
       this.callOptions = options
+      this.inviteOptions = inviteOptions
       const session = { remoteIdentity: { uri: sipAddress(peer, 'pbx.test') } }
       this.options.delegate.onCallCreated(session)
       return session
@@ -83,6 +84,7 @@ function fixture() {
       return stream
     }
   }
+  const results = []
   class Messager {
     constructor(agent, uri, body, type) {
       this.body = body
@@ -100,6 +102,7 @@ function fixture() {
       onState: (state) => states.push(state),
       onMessage: (message) => messages.push(message),
       onError: (error) => errors.push(error),
+      onCallResult: (call) => results.push(call),
     },
     { SessionManager: Manager, Messager },
   )
@@ -108,10 +111,11 @@ function fixture() {
     client.manager.options.delegate.onRegistered()
     return client.manager
   }
-  function incoming(manager, videoOffer = true) {
+  function incoming(manager, videoOffer = true, address = '1002') {
     const session = {
-      remoteIdentity: { uri: sipAddress('1002', 'pbx.test') },
+      remoteIdentity: { uri: sipAddress(address, 'pbx.test') },
       request: {
+        callId: 'incoming-test-id@pbx.test',
         body: videoOffer
           ? 'v=0\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n'
           : 'v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n',
@@ -132,6 +136,7 @@ function fixture() {
     audio,
     video,
     stream,
+    results,
   }
 }
 
@@ -215,6 +220,67 @@ test('answer audio-only avoids requesting a camera even for a video offer', asyn
     false,
   )
   await f.client.disconnect()
+})
+
+test('outgoing rejection is recorded after the hangup callback with its actual SIP status', async () => {
+  const f = fixture()
+  const manager = await f.registered()
+  await f.client.call('1002', false, 'Trần Hoàng Nam')
+  const session = f.client.session
+  manager.options.delegate.onCallHangup(session)
+  manager.inviteOptions.requestDelegate.onReject(rejected(486))
+  manager.options.delegate.onCallHangup(session)
+  await f.client.disconnect()
+  assert.equal(f.results.length, 1)
+  assert.equal(f.results[0].status, 'BUSY')
+  assert.equal(f.results[0].name, 'Trần Hoàng Nam')
+  assert.equal(f.results[0].answeredAt, null)
+})
+
+test('incoming cancel, local decline and answered elsewhere have distinct outcomes', async () => {
+  const f = fixture()
+  const manager = await f.registered()
+  for (const reason of ['', 'SIP;cause=200;text="Call completed elsewhere"']) {
+    const session = f.incoming(manager)
+    session.delegate.onCancel({ request: { getHeaders: () => [reason] } })
+    manager.options.delegate.onCallHangup(session)
+  }
+  f.incoming(manager)
+  await f.client.hangup()
+  assert.deepEqual(f.results.map((call) => call.status), ['MISSED', 'ANSWERED_ELSEWHERE', 'DECLINED'])
+  assert.ok(f.results.every((call) => call.id === 'incoming-test-id@pbx.test'))
+  await f.client.disconnect()
+})
+
+test('an inbound call from the local PBX signaling port uses the same peer as chat', async () => {
+  const f = fixture()
+  const manager = await f.registered()
+  const local = f.incoming(manager, false, 'sip:1002@pbx.test:5060')
+  manager.options.delegate.onCallHangup(local)
+  const external = f.incoming(manager, false, 'sip:1002@other.test:5060')
+  manager.options.delegate.onCallHangup(external)
+  await f.client.disconnect()
+  assert.deepEqual(f.results.map((call) => call.peer), [
+    'sip:1002@pbx.test',
+    'sip:1002@other.test:5060',
+  ])
+})
+
+test('an answered audio-only call records duration timestamps and connection loss is separate', async () => {
+  const f = fixture()
+  const manager = await f.registered()
+  f.incoming(manager)
+  manager.getLocalMediaStream = () => ({ getVideoTracks: () => [] })
+  await f.client.answer(false)
+  await f.client.hangup()
+  f.incoming(manager)
+  manager.options.delegate.onServerDisconnect()
+  await f.client.disconnect()
+  assert.deepEqual(f.results.map((call) => call.status), ['COMPLETED', 'INTERRUPTED'])
+  assert.equal(f.results[0].video, false)
+  assert.ok(f.results[0].startedAt <= f.results[0].answeredAt)
+  assert.ok(f.results[0].answeredAt <= f.results[0].endedAt)
+  assert.equal(f.results[1].answeredAt, null)
 })
 
 test('declining a second incoming call preserves the first session', async () => {

@@ -1383,6 +1383,54 @@ svg {
 .message-delivery {
   display: inline-flex;
 }
+.call-activity {
+  display: grid;
+  gap: 9px;
+  width: 224px;
+  max-width: 90%;
+  padding: 10px;
+  border-radius: 16px;
+  background: #f0f1f3;
+  color: #282d35;
+}
+.outgoing-message .call-activity {
+  background: #eaf2ff;
+}
+.call-activity-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.call-activity-heading > div {
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.call-activity-heading > div > span {
+  color: #626974;
+  font-size: 12px;
+}
+.call-activity-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #fff;
+}
+.call-activity-missed .call-activity-icon,
+.call-activity-missed strong,
+.conversation-preview > .conversation-missed {
+  color: #a92031;
+}
+.call-activity [data-slot='button'] {
+  width: 100%;
+  background: #fff;
+}
+.call-activity [data-slot='button']:hover:not(:disabled) {
+  background: #f9fafc;
+}
 .delivery-failed {
   color: #d85a65;
 }

@@ -41,12 +41,15 @@ async function until(check, timeout = 25000) {
     await new Promise((resolve) => setTimeout(resolve, 80))
   }
 }
-async function login(page, username) {
-  await page.goto(`${base}/login`)
+async function submitLogin(page, username, destination) {
   await page.getByLabel('Tên đăng nhập', { exact: true }).fill(username)
   await page.getByLabel('Mật khẩu', { exact: true }).fill('test-password')
   await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
-  await page.waitForURL('**/messages')
+  await page.waitForURL((url) => url.pathname === `/${destination}`)
+}
+async function login(page, username) {
+  await page.goto(`${base}/login`)
+  await submitLogin(page, username, 'messages')
 }
 async function selectPeer() {
   await main
@@ -278,6 +281,72 @@ try {
         .getByRole('button', { name: 'Kết thúc cuộc gọi', exact: true })
         .click()
       await until(() => callee.isClosed())
+    },
+  )
+  await check(
+    'call cards appear with messages, update chat previews and survive a fresh login',
+    async () => {
+      const aliceChat = peer.locator('.conversation-item').filter({ hasText: 'Nguyễn Minh Anh' })
+      await aliceChat.click()
+      const received = peer.locator('.message-history')
+      const dialed = main.locator('.message-history')
+      const missedCards = received.locator('.call-activity-missed')
+      await missedCards.first().waitFor()
+      await received.locator('.call-activity').getByText('Đã từ chối', { exact: true }).waitFor()
+      await received.locator('.call-activity').getByText('Cuộc gọi video', { exact: true }).waitFor()
+      await dialed.locator('.call-activity').getByText('Đã hủy', { exact: true }).waitFor()
+      assert.equal(await dialed.locator('.call-activity-missed').count(), 0)
+
+      const text = 'Tin nhắn giữa hai cuộc gọi'
+      await main.getByPlaceholder('Nhập tin nhắn…').fill(text)
+      await main.getByPlaceholder('Nhập tin nhắn…').press('Enter')
+      await received.getByText(text, { exact: true }).waitFor()
+
+      let releaseSave
+      const saved = new Promise((resolve) => { releaseSave = resolve })
+      const delayCallSave = async (route) => {
+        if (route.request().method() === 'POST') await saved
+        await route.continue().catch(() => {})
+      }
+      await peer.route('**/api/v1/calls', delayCallSave, { times: 1 })
+      const callSaved = peer.waitForResponse((response) =>
+        new URL(response.url()).pathname === '/api/v1/calls' &&
+        response.request().method() === 'POST' && response.status() === 204)
+      try {
+        const [caller, callee] = await start()
+        await caller.getByRole('button', { name: 'Hủy cuộc gọi', exact: true }).click()
+        await until(() => caller.isClosed() && callee.isClosed())
+        await until(async () => (await missedCards.count()) === 2)
+        await aliceChat.getByText('Cuộc gọi nhỡ', { exact: true }).waitFor()
+        assert.equal(await received.locator('.call-activity').last().getByText('Cuộc gọi nhỡ').count(), 1)
+        assert.equal(await received.evaluate((node, message) => {
+          const entries = [...node.querySelectorAll('.message-body, .call-activity')]
+          return entries.at(-2)?.textContent === message && entries.at(-1)?.querySelector('strong')?.textContent === 'Cuộc gọi nhỡ'
+        }, text), true)
+      } finally {
+        releaseSave()
+      }
+      await callSaved
+      await shot(peer, 'chat-call-history-desktop.png')
+      await peer.setViewportSize({ width: 390, height: 844 })
+      assert.equal(await peer.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      await shot(peer, 'chat-call-history-mobile.png')
+      await peer.setViewportSize(options.viewport)
+      unchanged()
+
+      await peer.reload()
+      await peer.waitForURL('**/login')
+      await submitLogin(peer, 'member01', 'messages')
+      await until(() => proxy.accounts.size === 2)
+      await aliceChat.click()
+      await until(async () => (await missedCards.count()) === 2)
+      await received.getByText(text, { exact: true }).waitFor()
+      const outgoing = peer.waitForEvent('popup')
+      const incoming = main.waitForEvent('popup')
+      await missedCards.last().getByRole('button', { name: 'Gọi lại', exact: true }).click()
+      const [caller, callee] = await Promise.all([outgoing, incoming])
+      await callee.getByRole('button', { name: 'Từ chối', exact: true }).click()
+      await until(() => caller.isClosed() && callee.isClosed())
     },
   )
   await check(

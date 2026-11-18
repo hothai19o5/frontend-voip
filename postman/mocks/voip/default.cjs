@@ -49,6 +49,8 @@ const seed = () => ({
   sessions: {},
   control: {},
   calls: {},
+  callHistory: [],
+  callSequence: 0,
   history: [],
   historySequence: 0,
 })
@@ -71,6 +73,19 @@ function onlineUsers(state, now = Date.now()) {
     )
     .map((session) => session.userId))
 }
+function missedCalls(records) {
+  const unread = records.filter((call) => call.status === 'MISSED' && call.unread)
+  return {
+    unread: unread.length,
+    through: unread.length ? String(unread.at(-1).sequence) : null,
+  }
+}
+function callEvidence(call) {
+  if (call.answeredAt != null) return 3
+  if (call.status === 'ANSWERED_ELSEWHERE') return 2
+  return Number(call.status === 'DECLINED')
+}
+const callEntry = ({ owner: _owner, sequence, ...call }) => ({ ...call, sequence: String(sequence) })
 function send(res, status, body) {
   res.writeHead(status, {
     'Content-Type':
@@ -195,6 +210,54 @@ http
       session.presenceUntil = now + (state.control.presenceTtlMs ?? 75000)
       await save()
       return send(res, 200, { onlineUserIds: [...onlineUsers(state, now)] })
+    }
+    if (path === '/calls' || path === '/calls/missed' || path === '/calls/threads') {
+      state.callHistory ||= []
+      const records = state.callHistory.filter((call) => call.owner === caller.id)
+      if (path === '/calls/missed') {
+        const matching = body.peer ? records.filter((call) => call.peer === body.peer) : records
+        if (req.method === 'PUT') {
+          for (const call of matching) {
+            if (call.status === 'MISSED' && call.sequence <= Number(body.through)) call.unread = false
+          }
+          await save()
+        }
+        return send(res, 200, missedCalls(matching))
+      }
+      if (req.method === 'POST') {
+        const existing = records.find((call) => call.id === body.id && call.direction === body.direction)
+        if (existing) {
+          if (existing.peer !== body.peer) return problem(res, 409, 'CALL_CONFLICT')
+          if (body.direction === 'INCOMING' && callEvidence(body) > callEvidence(existing)) {
+            Object.assign(existing, body, { unread: false })
+          }
+        } else {
+          state.callSequence = (state.callSequence || 0) + 1
+          state.callHistory.push({ ...body, owner: caller.id, sequence: state.callSequence, unread: body.status === 'MISSED' })
+        }
+        await save()
+        return send(res, 204)
+      }
+      const size = Number(url.searchParams.get('size') || 30)
+      const missed = url.searchParams.get('missed') === 'true'
+      const peer = url.searchParams.get('peer')
+      const threads = path === '/calls/threads'
+      const timeOf = (call) => peer || threads ? call.endedAt : call.startedAt
+      const [time, sequence] = (url.searchParams.get('before') || '').split(':').map(Number)
+      const sorted = records.filter((call) => (!peer || call.peer === peer) && (!missed || call.status === 'MISSED'))
+        .sort((a, b) => timeOf(b) - timeOf(a) || b.sequence - a.sequence)
+      const latest = new Map()
+      if (threads) {
+        for (const call of sorted) if (!latest.has(call.peer)) latest.set(call.peer, call)
+      }
+      const rows = [...(threads ? latest.values() : sorted)].filter((call) =>
+        !time || timeOf(call) < time || (timeOf(call) === time && call.sequence < sequence))
+      const visible = rows.slice(0, size)
+      const content = threads ? visible.map((call) => ({
+        lastCall: callEntry(call), missed: missedCalls(records.filter((item) => item.peer === call.peer)),
+      })) : visible.map(callEntry)
+      const last = visible.at(-1)
+      return send(res, 200, { content, nextCursor: rows.length > size ? `${timeOf(last)}:${last.sequence}` : null })
     }
     if (path.startsWith('/message-history/')) {
       state.history ||= []

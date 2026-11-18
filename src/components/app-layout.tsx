@@ -7,6 +7,7 @@ import { AccountMenu } from './account-menu'
 import { useToast } from './toast-context'
 import { useSip } from '../features/sip/sip-context'
 import { useMessages } from '../features/messages/message-context'
+import { useCallHistory } from '../features/calls/call-history-context'
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(true)
@@ -14,8 +15,12 @@ export function AppLayout() {
   const notify = useToast()
   const wasRegistered = useRef(false)
   const { conversations } = useMessages()
+  const { threads } = useCallHistory()
   const unread = Object.values(conversations).reduce(
-    (total, conversation) => total + conversation.unread,
+    (total, conversation) =>
+      total +
+      conversation.unread +
+      (threads[conversation.peer]?.missed.unread ?? 0),
     0,
   )
 

@@ -191,7 +191,10 @@ try {
           .count(),
         0,
       )
-      assert.equal(await page.locator('.main-nav a').count(), 1)
+      assert.deepEqual(
+        await page.locator('.main-nav a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))),
+        ['/messages'],
+      )
       assert.equal(await page.locator('.island').count(), 3)
       const bounds = await page.locator('.app-screen').boundingBox()
       assert.equal(bounds.x, 0)
@@ -312,12 +315,12 @@ try {
       await peer.bringToFront()
       await peer.keyboard.press('Escape')
       await peer
-        .getByRole('log', { name: 'Tin nhắn', exact: true })
+        .getByRole('log', { name: 'Tin nhắn và cuộc gọi', exact: true })
         .getByText('Chào Nam, mình trao đổi một chút nhé?', { exact: true })
         .waitFor()
       await send(peer, 'Được chứ. Mình đang sẵn sàng, bạn gọi nhé.')
       await page
-        .getByRole('log', { name: 'Tin nhắn', exact: true })
+        .getByRole('log', { name: 'Tin nhắn và cuộc gọi', exact: true })
         .getByText('Được chứ. Mình đang sẵn sàng, bạn gọi nhé.', {
           exact: true,
         })
@@ -345,7 +348,7 @@ try {
         .click()
       await send(page, 'Mình gọi video sau nhé. <b>Đây là văn bản.</b>')
       await peer
-        .getByRole('log', { name: 'Tin nhắn', exact: true })
+        .getByRole('log', { name: 'Tin nhắn và cuộc gọi', exact: true })
         .getByText('Mình gọi video sau nhé. <b>Đây là văn bản.</b>', {
           exact: true,
         })
@@ -551,10 +554,12 @@ try {
         .click()
       await connected(page)
       await control({ unauthorized: true })
-      await page
-        .getByRole('button', { name: 'Hội thoại mới', exact: true })
-        .click()
-      await page.waitForURL('**/login')
+      const expired = page.waitForURL('**/login')
+      await Promise.race([
+        expired,
+        page.getByRole('button', { name: 'Hội thoại mới', exact: true }).click(),
+      ])
+      await expired
       await until(() => incoming.locator('.call-panel').isHidden())
       await incomingCtx.close()
       await until(() => proxy.accounts.size === 0)

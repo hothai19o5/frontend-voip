@@ -13,6 +13,8 @@ import type { MessageEvent } from '../messages/message-store'
 import { useCallWindow } from './use-call-window'
 import { CallVideo } from './call-video'
 import { Button } from '../../components/ui/button'
+import { useCallHistory } from '../calls/call-history-context'
+import type { CallResult } from '../calls/call-history-context'
 
 // This provider and all media elements sit ABOVE the route outlet. Navigation
 // never destroys the user agent or detaches a call's media elements.
@@ -25,6 +27,7 @@ export function SipProvider({
 }) {
   const client = useRef<InstanceType<typeof SipClient> | null>(null)
   const { dispatch } = useMessages()
+  const { recordCall } = useCallHistory()
   const remoteAudio = useRef<HTMLAudioElement>(null)
   const remoteVideo = useRef<HTMLVideoElement>(null)
   const localVideo = useRef<HTMLVideoElement>(null)
@@ -67,6 +70,9 @@ export function SipProvider({
       onMessage: (event: MessageEvent) => {
         if (alive) dispatch({ type: 'message', event })
       },
+      onCallResult: (call: CallResult) => {
+        if (alive) recordCall(call)
+      },
     })
     client.current = service
     async function start() {
@@ -103,6 +109,7 @@ export function SipProvider({
     session.user.displayName,
     attempt,
     dispatch,
+    recordCall,
     syncCall,
   ])
 
@@ -133,11 +140,19 @@ export function SipProvider({
       user.sip.extensionPresent !== true
     )
       return
-    setPeerName(user.displayName)
-    if (state.call === 'idle') openCallWindow()
-    await run((service) =>
-      service.call(`sip:${user.sip!.extension}@${user.sip!.domain}`, video),
+    await callAddress(
+      `sip:${user.sip.extension}@${user.sip.domain}`,
+      user.displayName,
+      video,
     )
+  }
+
+  const callAddress = (peer: string, name: string, video = false) => {
+    if (state.call === 'idle') {
+      setPeerName(name)
+      openCallWindow()
+    }
+    return run((service) => service.call(peer, video, name))
   }
 
   const panel = (
@@ -173,11 +188,7 @@ export function SipProvider({
           setAttempt((value) => value + 1)
         },
         call,
-        callAddress: (peer, name, video = false) => {
-          setPeerName(name)
-          if (state.call === 'idle') openCallWindow()
-          return run((service) => service.call(peer, video))
-        },
+        callAddress,
         sendMessage: async (peer, body) => {
           const service = client.current
           if (!service) return false

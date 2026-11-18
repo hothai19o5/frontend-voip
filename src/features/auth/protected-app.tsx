@@ -4,6 +4,7 @@ import { SipProvider } from '../sip/sip-provider'
 import { AppLayout } from '../../components/app-layout'
 import { MessageProvider } from '../messages/message-provider'
 import { PresenceProvider } from '../presence/presence-provider'
+import { CallHistoryProvider } from '../calls/call-history-provider'
 
 export default function ProtectedApp() {
   const { session } = useSession()
@@ -19,9 +20,11 @@ export default function ProtectedApp() {
   return (
     <MessageProvider key={session.accessToken} session={session}>
       <PresenceProvider token={session.accessToken}>
-        <SipProvider session={session}>
-          <AppLayout />
-        </SipProvider>
+        <CallHistoryProvider token={session.accessToken}>
+          <SipProvider session={session}>
+            <AppLayout />
+          </SipProvider>
+        </CallHistoryProvider>
       </PresenceProvider>
     </MessageProvider>
   )

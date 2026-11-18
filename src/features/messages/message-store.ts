@@ -42,6 +42,7 @@ export interface Conversation {
 export type MessageState = Record<string, Conversation>
 export type MessageAction =
   | { type: 'open'; user: DirectoryUser }
+  | { type: 'call-peers'; peers: { peer: string; name: string | null }[] }
   | { type: 'message'; event: MessageEvent }
   | { type: 'read'; peer: string }
   | { type: 'draft'; peer: string; value: string; expected?: string }
@@ -91,6 +92,22 @@ export function messageReducer(
   state: MessageState,
   action: MessageAction,
 ): MessageState {
+  if (action.type === 'call-peers') {
+    let next = state
+    for (const call of action.peers) {
+      const peer = normalizePeer(call.peer)
+      if (next[peer]) continue
+      if (next === state) next = { ...state }
+      next[peer] = {
+        peer,
+        name: call.name || `Máy nhánh ${extensionOf(peer)}`,
+        messages: [],
+        unread: 0,
+        draft: '',
+      }
+    }
+    return next
+  }
   if (action.type === 'history-save') {
     for (const conversation of Object.values(state)) {
       if (!conversation.messages.some((message) => message.id === action.id))
@@ -172,9 +189,11 @@ export function messageReducer(
       next[peer] = {
         ...(previous ?? {
           peer,
-          name: entry.name || `Máy nhánh ${extensionOf(peer)}`,
           draft: '',
         }),
+        name: previous?.user || previous?.messages.length
+          ? previous.name
+          : entry.name || previous?.name || `Máy nhánh ${extensionOf(peer)}`,
         unread: (previous?.unread ?? 0) + unread,
         messages: [...messages.values()].sort(compareMessages),
         ...(peerUserId !== undefined ? { peerUserId } : {}),

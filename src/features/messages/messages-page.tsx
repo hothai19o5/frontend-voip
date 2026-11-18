@@ -24,6 +24,11 @@ import { timeLabel } from './message-format'
 import { ConversationProfile } from './conversation-profile'
 import { MessageComposer } from './message-composer'
 import { messagePreview } from './message-content'
+import { CallActivity } from '../calls/call-activity'
+import { callPreview } from '../calls/call-format'
+import { callKey, useCallHistory } from '../calls/call-history-context'
+import type { CallResult } from '../calls/call-history-context'
+import { useCallThread } from '../calls/use-call-thread'
 
 const dateLabel = (time: number) =>
   new Date(time).toLocaleDateString('vi-VN', {
@@ -45,6 +50,15 @@ export function MessagesPage() {
     loadHistory,
     retrySave,
   } = useMessages()
+  const {
+    threads,
+    observed,
+    moreThreads,
+    threadsLoading,
+    threadsFailed,
+    loadThreads,
+    markSeen,
+  } = useCallHistory()
   const sip = useSip()
   const notify = useToast()
   const [params, setParams] = useSearchParams()
@@ -58,20 +72,54 @@ export function MessagesPage() {
   const profileOpen = profilePreference ?? wide
   const bottom = useRef<HTMLDivElement>(null)
   const historyElement = useRef<HTMLDivElement>(null)
-  const sorted = Object.values(conversations).sort(
-    (a, b) => (b.messages.at(-1)?.time ?? 0) - (a.messages.at(-1)?.time ?? 0),
-  )
+  const sorted = Object.values(conversations)
+    .map((conversation) => {
+      const message = conversation.messages.at(-1)
+      let call: CallResult | undefined = threads[conversation.peer]?.lastCall
+      for (const item of observed[conversation.peer] ?? []) {
+        if (
+          !call ||
+          (callKey(call) !== callKey(item) && item.endedAt > call.endedAt)
+        )
+          call = item
+      }
+      const lastCall =
+        call && (!message || call.endedAt >= message.time) ? call : undefined
+      return {
+        conversation,
+        message,
+        lastCall,
+        time: lastCall?.endedAt ?? message?.time ?? 0,
+      }
+    })
+    .sort((a, b) => b.time - a.time)
   const selected = explicitPeer
     ? conversations[normalizePeer(explicitPeer)]
-    : sorted[0]
+    : sorted[0]?.conversation
   const messages = selected?.messages ?? []
-  const lastId = messages.at(-1)?.id
   const selectedPeer = selected?.peer
+  const callThread = useCallThread(selectedPeer)
+  const activity = [
+    ...messages.map((message) => ({
+      id: `message:${message.id}`,
+      time: message.time,
+      message,
+      call: null,
+    })),
+    ...callThread.calls.map((call) => ({
+      id: `call:${callKey(call)}`,
+      time: call.endedAt,
+      message: null,
+      call,
+    })),
+  ].sort((a, b) => a.time - b.time)
+  const lastId = activity.at(-1)?.id
+  const missed = selectedPeer ? threads[selectedPeer]?.missed : undefined
   const historyLoaded = selected?.historyLoaded
   const unsaved = Object.values(conversations).some((conversation) =>
     conversation.messages.some((message) => message.historyState === 'failed'),
   )
-  const filtered = sorted.filter((item) =>
+  const filtered = sorted.filter(({ conversation: item }) =>
     `${item.name} ${item.peer} ${item.user?.username ?? ''}`
       .toLocaleLowerCase('vi')
       .includes(search.toLocaleLowerCase('vi')),
@@ -90,7 +138,10 @@ export function MessagesPage() {
     const element = historyElement.current
     const height = element?.scrollHeight ?? 0
     const top = element?.scrollTop ?? 0
-    await loadHistory(selectedPeer)
+    await Promise.all([
+      selected?.historyCursor ? loadHistory(selectedPeer) : undefined,
+      callThread.hasOlder ? callThread.loadOlder() : undefined,
+    ])
     requestAnimationFrame(() => {
       if (element?.dataset.peer === selectedPeer)
         element.scrollTop = top + element.scrollHeight - height
@@ -104,8 +155,10 @@ export function MessagesPage() {
         document.visibilityState === 'visible' &&
         document.hasFocus() &&
         (explicitPeer || innerWidth > 640)
-      )
+      ) {
         dispatch({ type: 'read', peer: selectedPeer })
+        if (missed?.through) void markSeen(selectedPeer, missed.through)
+      }
     }
     markRead()
     window.addEventListener('focus', markRead)
@@ -114,7 +167,15 @@ export function MessagesPage() {
       window.removeEventListener('focus', markRead)
       document.removeEventListener('visibilitychange', markRead)
     }
-  }, [selectedPeer, lastId, explicitPeer, peopleOpen, dispatch])
+  }, [
+    selectedPeer,
+    lastId,
+    explicitPeer,
+    peopleOpen,
+    dispatch,
+    markSeen,
+    missed,
+  ])
 
   function connectionReady() {
     if (sip.state.connection === 'registered') return true
@@ -205,8 +266,10 @@ export function MessagesPage() {
               </div>
             ) : null}
             {filtered.length ? (
-              filtered.map((conversation) => {
-                const last = conversation.messages.at(-1)
+              filtered.map(({ conversation, message, lastCall, time }) => {
+                const unread =
+                  conversation.unread +
+                  (threads[conversation.peer]?.missed.unread ?? 0)
                 return (
                   <button
                     key={conversation.peer}
@@ -217,32 +280,40 @@ export function MessagesPage() {
                     <span className="presence-avatar">
                       <PersonAvatar name={conversation.name} />
                       <PresenceStatus
-                        userId={conversation.user?.id ?? conversation.peerUserId}
+                        userId={
+                          conversation.user?.id ?? conversation.peerUserId
+                        }
                         dot
                       />
                     </span>
                     <span className="conversation-preview">
                       <strong>{conversation.name}</strong>
-                      <span>
+                      <span
+                        className={
+                          lastCall?.status === 'MISSED' && !conversation.draft
+                            ? 'conversation-missed'
+                            : undefined
+                        }
+                      >
                         {conversation.draft ? (
                           <>
                             <em>Bản nháp: </em>
                             {conversation.draft}
                           </>
-                        ) : last ? (
-                          `${last.direction === 'outgoing' ? 'Bạn: ' : ''}${messagePreview(last.body)}`
+                        ) : lastCall ? (
+                          callPreview(lastCall)
+                        ) : message ? (
+                          `${message.direction === 'outgoing' ? 'Bạn: ' : ''}${messagePreview(message.body)}`
                         ) : (
                           'Bắt đầu cuộc trò chuyện'
                         )}
                       </span>
                     </span>
                     <span className="conversation-preview-meta">
-                      {last ? <time>{timeLabel(last.time)}</time> : null}
-                      {conversation.unread ? (
+                      {time ? <time>{timeLabel(time)}</time> : null}
+                      {unread ? (
                         <span className="unread-count">
-                          {conversation.unread > 99
-                            ? '99+'
-                            : conversation.unread}
+                          {unread > 99 ? '99+' : unread}
                         </span>
                       ) : null}
                     </span>
@@ -267,12 +338,23 @@ export function MessagesPage() {
                 ) : null}
               </div>
             ) : null}
-            {moreConversations ? (
+            {threadsFailed ? (
+              <div className="history-controls" role="status">
+                <span>Chưa tải được lịch sử cuộc gọi.</span>
+                <Button variant="ghost" onClick={() => void loadThreads()}>
+                  Thử lại tải cuộc gọi
+                </Button>
+              </div>
+            ) : null}
+            {moreConversations || moreThreads ? (
               <div className="history-controls">
                 <Button
                   variant="ghost"
-                  disabled={historyLoading}
-                  onClick={() => void loadConversations()}
+                  disabled={historyLoading || threadsLoading}
+                  onClick={() => {
+                    if (moreConversations) void loadConversations()
+                    if (moreThreads) void loadThreads(true)
+                  }}
                 >
                   Tải hội thoại cũ hơn
                 </Button>
@@ -345,7 +427,7 @@ export function MessagesPage() {
                 ref={historyElement}
                 data-peer={selectedPeer}
                 role="log"
-                aria-label="Tin nhắn"
+                aria-label="Tin nhắn và cuộc gọi"
                 aria-live="polite"
                 aria-relevant="additions text"
               >
@@ -365,31 +447,54 @@ export function MessagesPage() {
                     </Button>
                   </div>
                 ) : null}
-                {selected.historyCursor ? (
-                  <div className="history-controls">
-                    <Button
-                      variant="ghost"
-                      disabled={loadingPeers.has(selected.peer)}
-                      onClick={() => void loadOlder()}
-                    >
-                      Tải tin nhắn cũ hơn
+                {callThread.failed ? (
+                  <div className="history-controls" role="status">
+                    <span>Chưa tải được cuộc gọi trong đoạn chat này.</span>
+                    <Button variant="ghost" onClick={callThread.retry}>
+                      Thử lại tải cuộc gọi
                     </Button>
                   </div>
                 ) : null}
-                {messages.length ? (
-                  messages.map((message, index) => (
-                    <div key={message.id}>
+                {selected.historyCursor || callThread.hasOlder ? (
+                  <div className="history-controls">
+                    <Button
+                      variant="ghost"
+                      disabled={
+                        loadingPeers.has(selected.peer) || callThread.loading
+                      }
+                      onClick={() => void loadOlder()}
+                    >
+                      {callThread.hasOlder
+                        ? 'Tải lịch sử cũ hơn'
+                        : 'Tải tin nhắn cũ hơn'}
+                    </Button>
+                  </div>
+                ) : null}
+                {activity.length ? (
+                  activity.map((item, index) => (
+                    <div key={item.id}>
                       {index === 0 ||
-                      new Date(message.time).toDateString() !==
-                        new Date(messages[index - 1].time).toDateString() ? (
+                      new Date(item.time).toDateString() !==
+                        new Date(activity[index - 1].time).toDateString() ? (
                         <div className="message-date">
-                          <span>{dateLabel(message.time)}</span>
+                          <span>{dateLabel(item.time)}</span>
                         </div>
                       ) : null}
-                      <MessageBubble message={message} />
+                      {item.call ? (
+                        <CallActivity
+                          call={item.call}
+                          canCall={
+                            canCall && sip.state.connection === 'registered'
+                          }
+                          redial={call}
+                        />
+                      ) : (
+                        <MessageBubble message={item.message} />
+                      )}
                     </div>
                   ))
                 ) : !loadingPeers.has(selected.peer) &&
+                  !callThread.loading &&
                   !peerErrors[selected.peer] ? (
                   <div className="thread-intro">
                     <PersonAvatar name={selected.name} large />

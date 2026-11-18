@@ -13,6 +13,13 @@ import type {
   HistoryPage,
 } from '../features/messages/message-store'
 import type { HistoryWrite } from '../features/messages/history-writer'
+import type {
+  CallEntry,
+  CallPage,
+  CallResult,
+  CallThread,
+  MissedCalls,
+} from '../features/calls/call-history-context'
 
 const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
@@ -137,6 +144,29 @@ export const api = {
     }),
   sipAccount: (token: string, signal?: AbortSignal) =>
     request<SipAccount>('/sip/account', { token, signal }),
+  saveCall: (token: string, body: CallResult) =>
+    request<void>('/calls', { token, body, method: 'POST', keepalive: true }),
+  callHistory: (
+    token: string,
+    peer: string,
+    before: string | null,
+    signal: AbortSignal,
+  ) =>
+    request<CallPage<CallEntry>>(
+      `/calls?${new URLSearchParams({ peer, ...(before ? { before } : {}) })}`,
+      { token, signal },
+    ),
+  callThreads: (token: string, before: string | null, signal: AbortSignal) =>
+    request<CallPage<CallThread>>(
+      `/calls/threads${before ? `?${new URLSearchParams({ before })}` : ''}`,
+      { token, signal },
+    ),
+  markMissedCallsSeen: (token: string, peer: string, through: string) =>
+    request<MissedCalls>('/calls/missed', {
+      token,
+      method: 'PUT',
+      body: { peer, through },
+    }),
   historyConversations: (
     token: string,
     before?: string,

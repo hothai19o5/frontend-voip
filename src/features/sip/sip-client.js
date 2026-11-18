@@ -35,19 +35,66 @@ function responseError(response) {
   )
 }
 
+function incomingCall(session, domain) {
+  const sipId = session.request.callId
+  const remote = session.remoteIdentity.uri
+  // A From URI can include the PBX signaling port while contacts use its AoR.
+  const peer =
+    remote.port != null && remote.host === domain.toLowerCase()
+      ? `${remote.scheme}:${remote.aor}`
+      : remote.toString()
+  return {
+    id:
+      typeof sipId === 'string' && sipId.length <= 255 && /^[!-~]+$/.test(sipId)
+        ? sipId
+        : createLocalId(),
+    direction: 'INCOMING',
+    peer,
+    name: session.remoteIdentity.displayName,
+    video: offersVideo(session.request.body),
+    startedAt: Date.now(),
+    answeredAt: null,
+  }
+}
+
+function outcome(call) {
+  if (call.status) return call.status
+  if (call.answeredAt !== null) return 'COMPLETED'
+  if (call.direction === 'INCOMING') return call.answering ? 'FAILED' : 'MISSED'
+  switch (call.response) {
+    case 486:
+    case 600:
+      return 'BUSY'
+    case 603:
+      return 'DECLINED'
+    case 408:
+      return 'UNANSWERED'
+    case 480:
+    case 487:
+      return call.rang ? 'UNANSWERED' : 'FAILED'
+    default:
+      return 'FAILED'
+  }
+}
+
 // The SIP lifetime is independent from React renders. Injectable dependencies let
 // tests exercise failure paths without a live PBX or real credentials.
 export class SipClient {
-  constructor({ media, onState, onMessage, onError }, dependencies = {}) {
+  constructor(
+    { media, onState, onMessage, onError, onCallResult = (_result) => {} },
+    dependencies = {},
+  ) {
     this.Manager = dependencies.SessionManager || SessionManager
     this.Messager = dependencies.Messager || Messager
     this.media = media
     this.onState = onState
     this.onMessage = onMessage
     this.onError = onError
+    this.onCallResult = onCallResult
     this.state = { ...INITIAL_STATE }
     this.pendingMessages = new Map()
     this.session = null
+    this.callRecord = null
     this.manager = null
     this.callPending = false
     this.generation = 0
@@ -70,6 +117,31 @@ export class SipClient {
         element.srcObject = null
       }
     }
+  }
+
+  finishCall(status) {
+    const call = this.callRecord
+    if (!call) return
+    this.callRecord = null
+    if (status && !call.status) call.status = status
+    const endedAt = Math.max(Date.now(), call.answeredAt ?? call.startedAt)
+    // SIP.js transitions to Terminated before invoking the INVITE rejection
+    // delegate. Read its final response after both callbacks have run.
+    queueMicrotask(() => this.reportCall(call, endedAt))
+  }
+
+  reportCall(call, endedAt) {
+    this.onCallResult({
+      id: call.id,
+      direction: call.direction,
+      status: outcome(call),
+      peer: call.peer,
+      name: call.name?.replace(/\s+/g, ' ').trim().slice(0, 255) || null,
+      video: call.video,
+      startedAt: call.startedAt,
+      answeredAt: call.answeredAt,
+      endedAt,
+    })
   }
 
   bindRemoteVideo(session, handler = session.sessionDescriptionHandler) {
@@ -151,6 +223,7 @@ export class SipClient {
         onServerDisconnect: () => {
           if (!current()) return
           this.failPendingMessages('Mất kết nối WSS.')
+          this.finishCall('INTERRUPTED')
           this.clearCall()
           this.update({ connection: 'disconnected' })
         },
@@ -167,14 +240,32 @@ export class SipClient {
           }
         },
         onCallReceived: (session) => {
-          if (!current() || this.session !== session || this.callPending) {
+          if (!current()) return
+          const call = incomingCall(session, this.domain)
+          if (this.session !== session || this.callPending) {
+            call.status = 'MISSED'
+            this.reportCall(call, call.startedAt)
             void manager.decline(session).catch((error) => this.onError(error))
             return
           }
+          this.callRecord = call
+          const previous = session.delegate?.onCancel
+          session.delegate = {
+            ...session.delegate,
+            onCancel: (cancel) => {
+              const reasons = cancel.request.getHeaders('Reason')
+              call.status = reasons.some((reason) =>
+                /(?:^|,)\s*SIP\s*;[^,]*\bcause\s*=\s*200\b/i.test(reason),
+              )
+                ? 'ANSWERED_ELSEWHERE'
+                : (call.status ?? 'MISSED')
+              previous?.(cancel)
+            },
+          }
           this.update({
             call: 'incoming',
-            peer: session.remoteIdentity.uri.toString(),
-            offeredVideo: offersVideo(session.request.body),
+            peer: call.peer,
+            offeredVideo: call.video,
           })
         },
         onCallAnswered: (session) => {
@@ -182,6 +273,14 @@ export class SipClient {
           const hasVideo = Boolean(
             manager.getLocalMediaStream(session)?.getVideoTracks().length,
           )
+          if (this.callRecord) {
+            this.callRecord.answeredAt ??= Math.max(
+              Date.now(),
+              this.callRecord.startedAt,
+            )
+            this.callRecord.video = hasVideo
+            this.callRecord.status = undefined
+          }
           this.bindRemoteVideo(session)
           if (!this.remoteVideoObserver && this.media.remoteVideo) {
             this.media.remoteVideo.srcObject =
@@ -202,7 +301,10 @@ export class SipClient {
           })
         },
         onCallHangup: (session) => {
-          if (current() && this.session === session) this.clearCall()
+          if (current() && this.session === session) {
+            this.finishCall()
+            this.clearCall()
+          }
         },
         onMessageReceived: (message) => {
           if (!current()) return
@@ -258,13 +360,23 @@ export class SipClient {
       throw new Error('Cần đăng ký SIP trước.')
   }
 
-  async call(target, video) {
+  async call(target, video, name = '') {
     this.requireRegistered()
     if (this.session || this.callPending)
       throw new Error('Đang có một cuộc gọi khác.')
     const peer = sipAddress(target, this.domain).toString()
     const manager = this.manager
     const generation = this.generation
+    const call = {
+      id: createLocalId(),
+      direction: 'OUTGOING',
+      peer,
+      name,
+      video,
+      startedAt: Date.now(),
+      answeredAt: null,
+    }
+    this.callRecord = call
     this.callPending = true
     this.update({ call: 'outgoing', peer, offeredVideo: video })
     try {
@@ -277,7 +389,11 @@ export class SipClient {
         },
         {
           requestDelegate: {
+            onProgress: (response) => {
+              if (response.message.statusCode === 180) call.rang = true
+            },
             onReject: (response) => {
+              call.response = response.message.statusCode
               if (this.manager === manager)
                 this.onError(responseError(response))
             },
@@ -285,9 +401,12 @@ export class SipClient {
         },
       )
     } catch (error) {
-      if (generation === this.generation) {
+      if (this.callRecord === call) {
         if (this.session) await manager.hangup(this.session).catch(() => {})
-        this.clearCall()
+        if (this.callRecord === call) {
+          this.finishCall()
+          this.clearCall()
+        }
       }
       throw error
     } finally {
@@ -301,6 +420,7 @@ export class SipClient {
     const session = this.session
     const manager = this.manager
     const generation = this.generation
+    if (this.callRecord) this.callRecord.answering = true
     this.update({ call: 'answering' })
     try {
       await manager.answer(session, {
@@ -309,9 +429,13 @@ export class SipClient {
         },
       })
     } catch (error) {
-      if (generation === this.generation) {
+      if (generation === this.generation && this.session === session) {
+        if (this.callRecord) this.callRecord.status = 'FAILED'
         await manager.hangup(session).catch(() => {})
-        this.clearCall()
+        if (this.session === session) {
+          this.finishCall()
+          this.clearCall()
+        }
       }
       throw error
     }
@@ -322,12 +446,17 @@ export class SipClient {
     const session = this.session
     const generation = this.generation
     const incoming = this.state.call === 'incoming'
+    if (this.callRecord && this.callRecord.answeredAt === null)
+      this.callRecord.status = incoming ? 'DECLINED' : 'CANCELED'
     this.update({ call: 'ending' })
     try {
       if (incoming) await this.manager.decline(session)
       else await this.manager.hangup(session)
     } catch (error) {
-      if (generation === this.generation) this.clearCall()
+      if (generation === this.generation && this.session === session) {
+        this.finishCall()
+        this.clearCall()
+      }
       throw error
     }
   }
@@ -424,6 +553,7 @@ export class SipClient {
     this.manager = null
     this.callPending = false
     this.failPendingMessages('Đã ngắt kết nối trước khi nhận phản hồi MESSAGE.')
+    this.finishCall('INTERRUPTED')
     this.clearCall()
     this.update({ connection: 'disconnected' })
     this.stopping = this.stopping

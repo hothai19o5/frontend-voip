@@ -13,15 +13,15 @@ export interface HistoryWrite {
 
 // Keep the latest version per id while requests run serially. A late pending
 // save cannot delete a queued acknowledgment. Failed PUTs are safe to retry.
-export class HistoryWriter {
-  private queue = new Map<string, HistoryWrite>()
+export class HistoryWriter<T = HistoryWrite> {
+  private queue = new Map<string, T>()
   private running = false
   private active = true
-  private save: (id: string, message: HistoryWrite) => Promise<unknown>
+  private save: (id: string, message: T) => Promise<unknown>
   private result: (id: string, status: 'saving' | 'saved' | 'failed') => void
   private failure: () => void
   constructor(
-    save: (id: string, message: HistoryWrite) => Promise<unknown>,
+    save: (id: string, message: T) => Promise<unknown>,
     result: (id: string, status: 'saving' | 'saved' | 'failed') => void,
     failure: () => void,
   ) {
@@ -30,7 +30,7 @@ export class HistoryWriter {
     this.failure = failure
   }
 
-  enqueue(id: string, message: HistoryWrite) {
+  enqueue(id: string, message: T) {
     this.queue.set(id, message)
     this.result(id, 'saving')
     void this.flush()
