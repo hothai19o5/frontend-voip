@@ -71,3 +71,70 @@ test('incoming messages create an unread conversation; reading and drafts preser
   assert.equal(state['sip:1002@pbx.test'].messages[0].body, event.body)
   assert.equal(reduce(state, { type: 'read', peer: event.peer }), state)
 })
+
+test('late history hydration preserves live acknowledgment, unread and draft without duplicates', () => {
+  let state = reduce({}, { type: 'message', event })
+  state = reduce(state, { type: 'draft', peer: event.peer, value: 'Đang soạn' })
+  state = reduce(state, {
+    type: 'history',
+    peer: event.peer,
+    page: {
+      content: [
+        { ...event, status: 'pending', sequence: '2', name: 'Nam' },
+        { ...event, id: 'older', time: 500, sequence: '1', name: 'Nam' },
+      ],
+      nextCursor: '1',
+    },
+  })
+  const conversation = state[normalizePeer(event.peer)]
+  assert.equal(conversation.messages.length, 2)
+  assert.equal(conversation.messages[1].status, 'received')
+  assert.equal(conversation.draft, 'Đang soạn')
+  assert.equal(conversation.unread, 1)
+  assert.equal(conversation.historyCursor, '1')
+  assert.equal(conversation.historyLoaded, true)
+})
+
+test('restored pending means unknown result and history does not create unread notifications', () => {
+  let state = reduce(
+    {},
+    {
+      type: 'history-list',
+      conversations: [
+        {
+          peer: event.peer,
+          name: 'Nam',
+          lastMessage: {
+            ...event,
+            direction: 'outgoing',
+            status: 'pending',
+            sequence: '1',
+            name: 'Nam',
+          },
+        },
+      ],
+    },
+  )
+  const conversation = state[normalizePeer(event.peer)]
+  assert.equal(conversation.messages[0].status, 'unknown')
+  assert.equal(conversation.messages[0].historyState, 'saved')
+  assert.equal(conversation.unread, 0)
+  assert.equal(conversation.historyLoaded, undefined)
+  state = reduce(state, {
+    type: 'history',
+    peer: event.peer,
+    page: {
+      content: [
+        {
+          ...event,
+          direction: 'outgoing',
+          status: 'accepted',
+          sequence: '1',
+          name: 'Nam',
+        },
+      ],
+      nextCursor: null,
+    },
+  })
+  assert.equal(state[normalizePeer(event.peer)].messages[0].status, 'accepted')
+})

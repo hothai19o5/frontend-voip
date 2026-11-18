@@ -1,4 +1,4 @@
-param([switch]$UsePostman, [switch]$CallWindowOnly)
+param([switch]$UsePostman, [switch]$CallWindowOnly, [switch]$HistoryOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $previousLocation = Get-Location
@@ -43,12 +43,18 @@ try {
     -RedirectStandardOutput output\playwright\vite.log -RedirectStandardError output\playwright\vite.err.log
   $processes += $viteProcess
   Wait-Endpoint "$($env:TEST_FRONTEND_URL)/login" $viteProcess
-  if (!$CallWindowOnly) {
+  if (!$CallWindowOnly -and !$HistoryOnly) {
     node scripts/verify-frontend.mjs
     if ($LASTEXITCODE -ne 0) { throw "Frontend verification failed ($LASTEXITCODE)." }
   }
-  node scripts/verify-call-window.mjs
-  if ($LASTEXITCODE -ne 0) { throw "Call window verification failed ($LASTEXITCODE)." }
+  if (!$CallWindowOnly) {
+    node scripts/verify-history.mjs
+    if ($LASTEXITCODE -ne 0) { throw "History verification failed ($LASTEXITCODE)." }
+  }
+  if (!$HistoryOnly) {
+    node scripts/verify-call-window.mjs
+    if ($LASTEXITCODE -ne 0) { throw "Call window verification failed ($LASTEXITCODE)." }
+  }
 } finally {
   foreach ($process in $processes) { if (!$process.HasExited) { Stop-Process -Id $process.Id -ErrorAction SilentlyContinue } }
   foreach ($key in $envKeys) { [Environment]::SetEnvironmentVariable($key, $savedEnvironment[$key], 'Process') }

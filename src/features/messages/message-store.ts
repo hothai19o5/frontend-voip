@@ -6,9 +6,24 @@ export interface ChatMessage {
   peer: string
   direction: 'incoming' | 'outgoing'
   body: string
-  status: 'pending' | 'accepted' | 'failed' | 'received'
+  status: 'pending' | 'accepted' | 'failed' | 'received' | 'unknown'
   time: number
   senderName?: string
+  historyState?: 'saving' | 'saved' | 'failed'
+}
+export interface HistoryEntry extends Omit<ChatMessage, 'status'> {
+  sequence: string
+  name: string
+  status: Exclude<ChatMessage['status'], 'unknown'>
+}
+export interface HistoryPage<T> {
+  content: T[]
+  nextCursor: string | null
+}
+export interface HistoryConversation {
+  peer: string
+  name: string
+  lastMessage: HistoryEntry
 }
 export type MessageEvent = Partial<ChatMessage> & Pick<ChatMessage, 'id'>
 export interface Conversation {
@@ -18,6 +33,8 @@ export interface Conversation {
   messages: ChatMessage[]
   unread: number
   draft: string
+  historyLoaded?: boolean
+  historyCursor?: string | null
 }
 export type MessageState = Record<string, Conversation>
 export type MessageAction =
@@ -25,6 +42,9 @@ export type MessageAction =
   | { type: 'message'; event: MessageEvent }
   | { type: 'read'; peer: string }
   | { type: 'draft'; peer: string; value: string }
+  | { type: 'history-list'; conversations: HistoryConversation[] }
+  | { type: 'history'; peer: string; page: HistoryPage<HistoryEntry> }
+  | { type: 'history-save'; id: string; status: ChatMessage['historyState'] }
 
 export function normalizePeer(value: string) {
   const address = value
@@ -42,6 +62,86 @@ export function messageReducer(
   state: MessageState,
   action: MessageAction,
 ): MessageState {
+  if (action.type === 'history-save') {
+    for (const conversation of Object.values(state)) {
+      if (!conversation.messages.some((message) => message.id === action.id))
+        continue
+      return {
+        ...state,
+        [conversation.peer]: {
+          ...conversation,
+          messages: conversation.messages.map((message) =>
+            message.id === action.id
+              ? { ...message, historyState: action.status }
+              : message,
+          ),
+        },
+      }
+    }
+    return state
+  }
+  if (action.type === 'history-list' || action.type === 'history') {
+    const next = { ...state }
+    const entries =
+      action.type === 'history-list'
+        ? action.conversations.map((item) => ({
+            peer: item.peer,
+            name: item.name,
+            messages: [item.lastMessage],
+          }))
+        : [
+            {
+              peer: action.peer,
+              name: action.page.content[0]?.name,
+              messages: action.page.content,
+            },
+          ]
+    for (const entry of entries) {
+      const peer = normalizePeer(entry.peer)
+      const previous = next[peer]
+      // Current messages win over an older HTTP snapshot. Hydration never adds
+      // unread counts or overwrites a draft while the user is typing.
+      const messages = new Map<string, ChatMessage>(
+        entry.messages.map((message) => [
+          message.id,
+          {
+            ...message,
+            peer,
+            historyState: 'saved',
+            status: message.status === 'pending' ? 'unknown' : message.status,
+          },
+        ]),
+      )
+      for (const message of previous?.messages ?? []) {
+        const fetched = messages.get(message.id)
+        // A previously restored pending record can later acquire a final result
+        // on the server. Keep live changes, but accept that persisted upgrade.
+        if (
+          message.historyState === 'saved' &&
+          message.status === 'unknown' &&
+          fetched &&
+          fetched.status !== 'unknown'
+        )
+          continue
+        messages.set(message.id, message)
+      }
+      next[peer] = {
+        ...(previous ?? {
+          peer,
+          name: entry.name || `Máy nhánh ${extensionOf(peer)}`,
+          unread: 0,
+          draft: '',
+        }),
+        messages: [...messages.values()].sort(
+          (a, b) => a.time - b.time || a.id.localeCompare(b.id),
+        ),
+        ...(action.type === 'history'
+          ? { historyLoaded: true, historyCursor: action.page.nextCursor }
+          : {}),
+      }
+    }
+    return next
+  }
   if (action.type === 'open') {
     if (!action.user.sip) return state
     const peer = normalizePeer(

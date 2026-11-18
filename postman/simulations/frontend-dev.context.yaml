@@ -1,5 +1,5 @@
 purpose:
-  stands_in_for: VoIP backend Auth, Users and own SIP configuration HTTP API.
+  stands_in_for: VoIP backend Auth, Users, own SIP configuration and message history HTTP API.
   unblocks: Frontend auth/session lifecycle, primary Messages UI, directory and SIP orchestration checks without creating real PBX extensions.
 assumptions:
   - id: auth-and-directory-contract
@@ -50,6 +50,8 @@ assumptions:
       and empty history in a new app session. The receiver acknowledgment is not
       a read receipt. The stand-in does not establish offline delivery or live
       PBX MESSAGE behavior. Report and screenshots are under output/playwright/.
+      This records the previous session-only choice; persistent history was
+      implemented on 2026-11-18 and is covered by persistent-message-history below.
     source: src/features/messages/; scripts/verify-frontend.mjs; tests/message-store.test.js; scripts/sip-test-proxy.mjs
     updated_at: '2026-11-17'
   - id: messenger-islands-and-toast-flow
@@ -66,6 +68,21 @@ assumptions:
       and file sections show empty states; no file endpoint was invented.
     source: scripts/verify-frontend.mjs; src/features/users/people-picker.tsx; src/components/toast-provider.tsx; src/features/messages/messages-page.tsx
     updated_at: '2026-11-17'
+  - id: persistent-message-history
+    status: supported
+    claim: In the local browser scenarios SIP messages are saved per app account, restored after login and merged with live messages without duplicates or draft loss.
+    reason: Six Chrome scenario groups exercised the real frontend and SIP.js against the updated OpenAPI-shaped history handler; backend integration and real HTTP checks separately verified persistence.
+    verification: >-
+      On 2026-11-18, scripts/verify-history.mjs passed two-way Unicode/plain-text
+      saves, reload/logout/login restoration, account separation, write errors
+      and idempotent retry without another SIP send or connection, conversation
+      and message pagination, read retry and delayed-snapshot/live-message merging.
+      The portable pm.state adapter was reused; Postman simulation daemon was not
+      run again. Backend tests passed on H2 and PostgreSQL; three history requests
+      passed four Postman assertions against the executable backend, and persisted
+      text survived backend restart. Live FusionPBX interop remains unverified.
+    source: scripts/verify-history.mjs; postman/mocks/voip/default.cjs; ../backend-voip/docs/MESSAGE_HISTORY.md; ../backend-voip/scripts/run-history-verification.ps1
+    updated_at: '2026-11-18'
 fingerprints:
   - id: frontend-implementation-2026-11-17
     date: '2026-11-17'

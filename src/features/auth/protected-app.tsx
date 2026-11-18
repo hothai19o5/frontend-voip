@@ -16,7 +16,7 @@ export default function ProtectedApp() {
       />
     )
   return (
-    <MessageProvider key={session.accessToken}>
+    <MessageProvider key={session.accessToken} session={session}>
       <SipProvider session={session}>
         <AppLayout />
       </SipProvider>

@@ -49,6 +49,8 @@ const seed = () => ({
   sessions: {},
   control: {},
   calls: {},
+  history: [],
+  historySequence: 0,
 })
 const profile = ({ password: _password, ...user }) => user
 const directory = ({ id, username, displayName, status, sip }) => ({
@@ -176,6 +178,34 @@ http
       return problem(res, 401, 'UNAUTHORIZED')
     }
     const caller = state.users.find((u) => u.id === session.userId)
+    if (path.startsWith('/message-history/')) {
+      state.history ||= []
+      if (req.method === 'PUT' && path.startsWith('/message-history/messages/')) {
+        if (state.control.historyWriteError) { await save(); return problem(res, 503, 'HISTORY_UNAVAILABLE') }
+        const id = decodeURIComponent(path.split('/').at(-1))
+        let entry = state.history.find((item) => item.owner === caller.id && item.id === id)
+        if (!entry) {
+          entry = { ...body, id, sequence: String(++state.historySequence), owner: caller.id }
+          state.history.push(entry)
+        } else if (entry.status === 'pending') entry.status = body.status
+        await save()
+        const { owner: _owner, ...result } = entry
+        return send(res, 200, result)
+      }
+      if (state.control.historyReadError) { await save(); return problem(res, 503, 'HISTORY_UNAVAILABLE') }
+      const size = Number(url.searchParams.get('size') || 50)
+      const before = Number(url.searchParams.get('before') || Number.MAX_SAFE_INTEGER)
+      let entries = state.history.filter((item) => item.owner === caller.id).sort((a, b) => Number(b.sequence) - Number(a.sequence))
+      if (path.endsWith('/conversations')) entries = [...new Map(entries.toReversed().map((item) => [item.peer, item])).values()].sort((a, b) => Number(b.sequence) - Number(a.sequence))
+      else entries = entries.filter((item) => item.peer === url.searchParams.get('peer'))
+      entries = entries.filter((item) => Number(item.sequence) < before)
+      const content = entries.slice(0, size).map(({ owner: _owner, ...item }) => path.endsWith('/conversations')
+        ? { peer: item.peer, name: item.name, lastMessage: item } : item)
+      const nextCursor = entries.length > size ? entries[size - 1].sequence : null
+      await save()
+      if (state.control.historyReadDelay) await new Promise((resolve) => setTimeout(resolve, state.control.historyReadDelay))
+      return send(res, 200, { content, nextCursor })
+    }
     if (path === '/auth/logout' && req.method === 'POST') {
       delete state.sessions[token]
       await save()

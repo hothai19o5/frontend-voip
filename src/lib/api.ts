@@ -6,6 +6,12 @@ import type {
   UserProfile,
 } from './contracts'
 import { sessionStore } from '../features/auth/session-store'
+import type {
+  HistoryConversation,
+  HistoryEntry,
+  HistoryPage,
+} from '../features/messages/message-store'
+import type { HistoryWrite } from '../features/messages/history-writer'
 
 const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
@@ -59,6 +65,7 @@ export async function request<T>(
     body?: unknown
     token?: string
     signal?: AbortSignal
+    keepalive?: boolean
   } = {},
 ): Promise<T> {
   const timeout = AbortSignal.timeout(20000)
@@ -78,6 +85,7 @@ export async function request<T>(
       cache: 'no-store',
       credentials: 'omit',
       signal,
+      keepalive: options.keepalive,
     })
   } catch (error) {
     if (options.signal?.aborted) throw error
@@ -121,6 +129,36 @@ export const api = {
     ),
   sipAccount: (token: string, signal?: AbortSignal) =>
     request<SipAccount>('/sip/account', { token, signal }),
+  historyConversations: (
+    token: string,
+    before?: string,
+    signal?: AbortSignal,
+  ) =>
+    request<HistoryPage<HistoryConversation>>(
+      `/message-history/conversations?${new URLSearchParams({ size: '30', ...(before ? { before } : {}) })}`,
+      { token, signal },
+    ),
+  historyMessages: (
+    token: string,
+    peer: string,
+    before?: string,
+    signal?: AbortSignal,
+  ) =>
+    request<HistoryPage<HistoryEntry>>(
+      `/message-history/messages?${new URLSearchParams({ peer, size: '50', ...(before ? { before } : {}) })}`,
+      { token, signal },
+    ),
+  saveHistory: (token: string, id: string, body: HistoryWrite) =>
+    request<HistoryEntry>(
+      `/message-history/messages/${encodeURIComponent(id)}`,
+      {
+        token,
+        method: 'PUT',
+        body,
+        keepalive:
+          new TextEncoder().encode(JSON.stringify(body)).length < 16000,
+      },
+    ),
 }
 
 export function errorMessage(error: unknown) {

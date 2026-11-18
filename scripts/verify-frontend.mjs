@@ -76,7 +76,6 @@ async function login(page, username = 'alice', ready = true) {
   const session = await (await response).json()
   await page.waitForURL('**/messages')
   await page.getByRole('heading', { name: 'Đoạn chat', exact: true }).waitFor()
-  assert.equal(await page.locator('.conversation-item').count(), 0)
   if (ready)
     await until(() =>
       proxy.accounts.has(`${session.user.sip.extension}@pbx.test`),
@@ -601,7 +600,7 @@ try {
     },
   )
   await check(
-    'account-menu logout during a call revokes the token and destroys session history',
+    'account-menu logout during a call revokes token, clears drafts and restores saved history on login',
     async () => {
       const token = await login(page)
       await selectPerson(page)
@@ -628,7 +627,8 @@ try {
           ).status === 401,
       )
       await login(page)
-      assert.equal(await page.locator('.conversation-item').count(), 0)
+      await until(async () => (await page.locator('.conversation-item').count()) > 0)
+      assert.equal(await page.getByLabel('Nội dung tin nhắn', { exact: true }).inputValue(), '')
       await logout(page)
     },
   )

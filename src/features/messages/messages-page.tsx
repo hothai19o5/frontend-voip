@@ -33,7 +33,18 @@ const dateLabel = (time: number) =>
   })
 
 export function MessagesPage() {
-  const { conversations, dispatch } = useMessages()
+  const {
+    conversations,
+    dispatch,
+    historyLoading,
+    historyError,
+    moreConversations,
+    loadConversations,
+    loadingPeers,
+    peerErrors,
+    loadHistory,
+    retrySave,
+  } = useMessages()
   const sip = useSip()
   const notify = useToast()
   const [params, setParams] = useSearchParams()
@@ -48,6 +59,7 @@ export function MessagesPage() {
   const [sending, setSending] = useState(false)
   const sendingLock = useRef(false)
   const bottom = useRef<HTMLDivElement>(null)
+  const historyElement = useRef<HTMLDivElement>(null)
   const sorted = Object.values(conversations).sort(
     (a, b) => (b.messages.at(-1)?.time ?? 0) - (a.messages.at(-1)?.time ?? 0),
   )
@@ -57,6 +69,10 @@ export function MessagesPage() {
   const messages = selected?.messages ?? []
   const lastId = messages.at(-1)?.id
   const selectedPeer = selected?.peer
+  const historyLoaded = selected?.historyLoaded
+  const unsaved = Object.values(conversations).some((conversation) =>
+    conversation.messages.some((message) => message.historyState === 'failed'),
+  )
   const filtered = sorted.filter((item) =>
     `${item.name} ${item.peer} ${item.user?.username ?? ''}`
       .toLocaleLowerCase('vi')
@@ -66,7 +82,22 @@ export function MessagesPage() {
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: 'nearest' })
-  }, [selectedPeer, lastId])
+  }, [selectedPeer, lastId, historyLoaded])
+  useEffect(() => {
+    if (selectedPeer && !historyLoaded) void loadHistory(selectedPeer)
+  }, [selectedPeer, historyLoaded, loadHistory])
+
+  async function loadOlder() {
+    if (!selectedPeer) return
+    const element = historyElement.current
+    const height = element?.scrollHeight ?? 0
+    const top = element?.scrollTop ?? 0
+    await loadHistory(selectedPeer)
+    requestAnimationFrame(() => {
+      if (element?.dataset.peer === selectedPeer)
+        element.scrollTop = top + element.scrollHeight - height
+    })
+  }
   useEffect(() => {
     if (!selectedPeer) return
     const markRead = () => {
@@ -172,6 +203,30 @@ export function MessagesPage() {
             />
           </div>
           <div className="conversation-items">
+            {historyLoading ? (
+              <p className="history-controls" role="status">
+                Đang tải hội thoại…
+              </p>
+            ) : null}
+            {historyError ? (
+              <div className="history-controls" role="status">
+                <span>Chưa tải được lịch sử. {historyError}</span>
+                <Button
+                  variant="ghost"
+                  onClick={() => void loadConversations()}
+                >
+                  Thử lại tải hội thoại
+                </Button>
+              </div>
+            ) : null}
+            {unsaved ? (
+              <div className="history-controls" role="status">
+                <span>Một số tin nhắn chưa được lưu lịch sử.</span>
+                <Button variant="ghost" onClick={retrySave}>
+                  Thử lại lưu lịch sử
+                </Button>
+              </div>
+            ) : null}
             {filtered.length ? (
               filtered.map((conversation) => {
                 const last = conversation.messages.at(-1)
@@ -211,7 +266,7 @@ export function MessagesPage() {
                   </button>
                 )
               })
-            ) : (
+            ) : !historyLoading && !historyError ? (
               <div className="conversation-list-empty">
                 <MessageCircle />
                 <strong>
@@ -228,7 +283,18 @@ export function MessagesPage() {
                   </Button>
                 ) : null}
               </div>
-            )}
+            ) : null}
+            {moreConversations ? (
+              <div className="history-controls">
+                <Button
+                  variant="ghost"
+                  disabled={historyLoading}
+                  onClick={() => void loadConversations()}
+                >
+                  Tải hội thoại cũ hơn
+                </Button>
+              </div>
+            ) : null}
           </div>
         </section>
         <section
@@ -286,11 +352,40 @@ export function MessagesPage() {
               </header>
               <div
                 className="message-history"
+                ref={historyElement}
+                data-peer={selectedPeer}
                 role="log"
                 aria-label="Tin nhắn"
                 aria-live="polite"
                 aria-relevant="additions text"
               >
+                {loadingPeers.has(selected.peer) ? (
+                  <p className="history-controls" role="status">
+                    Đang tải tin nhắn…
+                  </p>
+                ) : null}
+                {peerErrors[selected.peer] ? (
+                  <div className="history-controls" role="status">
+                    <span>Chưa tải được tin nhắn cũ.</span>
+                    <Button
+                      variant="ghost"
+                      onClick={() => void loadHistory(selected.peer)}
+                    >
+                      Thử lại tải tin nhắn
+                    </Button>
+                  </div>
+                ) : null}
+                {selected.historyCursor ? (
+                  <div className="history-controls">
+                    <Button
+                      variant="ghost"
+                      disabled={loadingPeers.has(selected.peer)}
+                      onClick={() => void loadOlder()}
+                    >
+                      Tải tin nhắn cũ hơn
+                    </Button>
+                  </div>
+                ) : null}
                 {messages.length ? (
                   messages.map((message, index) => (
                     <div key={message.id}>
@@ -304,13 +399,14 @@ export function MessagesPage() {
                       <MessageBubble message={message} />
                     </div>
                   ))
-                ) : (
+                ) : !loadingPeers.has(selected.peer) &&
+                  !peerErrors[selected.peer] ? (
                   <div className="thread-intro">
                     <PersonAvatar name={selected.name} large />
                     <h2>{selected.name}</h2>
                     <p>Gửi lời chào để bắt đầu cuộc trò chuyện.</p>
                   </div>
-                )}
+                ) : null}
                 <div ref={bottom} />
               </div>
               <div className="message-composer-wrap">

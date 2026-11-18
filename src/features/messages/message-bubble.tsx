@@ -9,7 +9,9 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
       ? 'Đang gửi'
       : message.status === 'failed'
         ? 'Gửi thất bại'
-        : 'Đã gửi tới dịch vụ'
+        : message.status === 'unknown'
+          ? 'Chưa rõ kết quả gửi'
+          : 'Đã gửi tới dịch vụ'
   return (
     <div
       className={`chat-message ${outgoing ? 'outgoing-message' : 'incoming-message'}`}
@@ -27,12 +29,15 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           >
             {message.status === 'pending' ? (
               <Clock3 size={12} />
-            ) : message.status === 'failed' ? (
+            ) : message.status === 'failed' || message.status === 'unknown' ? (
               <CircleAlert size={12} />
             ) : (
               <Check size={13} />
             )}
           </span>
+        ) : null}
+        {message.historyState === 'failed' ? (
+          <span>Chưa lưu lịch sử</span>
         ) : null}
       </div>
     </div>

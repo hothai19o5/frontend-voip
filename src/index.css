@@ -2264,3 +2264,15 @@ svg {
     transition-duration: 0.01ms !important;
   }
 }
+/* History controls share the existing panel spacing and button styles. */
+.history-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.75rem 1rem;
+  color: var(--color-muted-foreground);
+  font-size: 0.8rem;
+  text-align: center;
+}

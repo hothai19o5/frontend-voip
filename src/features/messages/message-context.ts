@@ -5,6 +5,14 @@ import type { MessageAction, MessageState } from './message-store'
 export const MessageContext = createContext<{
   conversations: MessageState
   dispatch: Dispatch<MessageAction>
+  historyLoading: boolean
+  historyError: string
+  moreConversations: boolean
+  loadConversations: () => Promise<void>
+  loadingPeers: ReadonlySet<string>
+  peerErrors: Record<string, string>
+  loadHistory: (peer: string) => Promise<void>
+  retrySave: () => void
 } | null>(null)
 export function useMessages() {
   const value = useContext(MessageContext)

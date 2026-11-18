@@ -77,11 +77,21 @@ configuration are never presented as remote online registration.
 
 ## Session and communication lifetime
 
-Tokens, SIP secrets, conversations and drafts stay in RAM. **Reloading/closing the
-tab requires a new login, drops local history and can end the call.** This follows
-the current backend contract and the user's choice of session-only SIP messaging.
-There is no browser storage, refresh-token flow, durable chat, attachment transfer
-or offline synchronization in this increment.
+Tokens, SIP secrets and drafts stay in RAM. **Reloading/closing the tab requires
+a new login and can end the call.** Saved message history is restored from the
+backend after login. There is no browser storage or refresh-token flow.
+
+SIP MESSAGE remains the transport. Incoming/outgoing messages and SIP outcomes
+are saved through `/api/v1/message-history` to PostgreSQL as each account's own
+history, in plaintext for this development increment. This does not provide
+offline delivery, attachment transfer or read receipts. Opening a thread loads
+50 recent messages, with controls for older messages/conversations. Restored
+pending messages show an unknown sending outcome rather than a false receipt.
+
+History failures keep messages visible and show a retry action. The queue retries
+on an online event without sending another SIP MESSAGE. Failed saves/drafts are
+only in RAM and disappear on reload/logout/closing; successfully saved messages
+remain in the database. Details: `../backend-voip/docs/MESSAGE_HISTORY.md`.
 
 Message and SIP providers plus media nodes remain mounted above the route outlet.
 Opening menus/pickers, changing conversations or resizing the sidebar does not
@@ -111,7 +121,7 @@ for microphone/camera on LAN devices.
 
 Expiry is checked by timer and focus/visibility changes. Authenticated HTTP 401
 invalidates only the token used by that request. Logout immediately clears local
-identity, pending requests, SIP/media, history and drafts while asking the backend
+identity, pending requests, SIP/media, in-memory history and drafts while asking the backend
 to revoke the captured token. Failed remote revocation is reported by toast.
 
 ## Source layout
@@ -144,20 +154,24 @@ It starts/stops owned services on `14020`, `15061`, `15173`; it does not touch t
 normal app on `5173`, live accounts or PBX extensions. Reports/screenshots are in
 gitignored `output/playwright/`.
 
-The runner covers blocked-popup inline behavior in `verify-frontend.mjs`, then
+The runner covers blocked-popup inline behavior in `verify-frontend.mjs`, saved
+history in `verify-history.mjs`, then
 real detached windows in `verify-call-window.mjs`: incoming/outgoing controls,
 duration, audio/video, moving the view without replacing streams or registering
 again, decline/cancel/end, and logout cleanup. Call-window screenshots and the
 dedicated `call-window-results.json` report are written to the same output folder.
 Pass `-CallWindowOnly` to the PowerShell runner to run only the detached-window
 scenarios, including child reload and main-app reload cleanup.
+Pass `-HistoryOnly` to run the six history groups: two-way saves, reload/login,
+write retry, pagination, read retry and a live-message/HTTP snapshot race.
 
 The reusable Postman simulation is based on `../backend-voip/docs/openapi.yaml`.
 Use `-UsePostman` to run it through the CLI. CLI 1.74.0's dataset daemon crashes
 while initializing `pm.state` on this Windows environment, so the default runner
 uses the same handler with a portable RAM adapter. No mock/workspace is published.
 
-Validated 2026-11-17: build, 31 unit tests and 16 browser scenario groups covering
+Validated 2026-11-18: build, 39 unit tests and 28 browser scenario groups (16 app,
+6 history, 6 detached-call groups) covering
 island layout (1577/1440/1024/768/390), sidebar/account menu, picker search/paging,
 toasts, SIP MESSAGE, failed sends/drafts, voice/video, mic/camera, reconnect,
 active-call 401/logout, token expiry and local-state cleanup. No browser page
