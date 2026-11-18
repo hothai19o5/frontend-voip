@@ -1,5 +1,6 @@
 import type {
   AppSession,
+  PresenceSnapshot,
   RegisterInput,
   SipAccount,
   UserPage,
@@ -128,6 +129,12 @@ export const api = {
       `/users?${new URLSearchParams({ q, page: String(page), size: '10' })}`,
       { token, signal },
     ),
+  presenceHeartbeat: (token: string, signal: AbortSignal) =>
+    request<PresenceSnapshot>('/presence/heartbeat', {
+      method: 'POST',
+      token,
+      signal,
+    }),
   sipAccount: (token: string, signal?: AbortSignal) =>
     request<SipAccount>('/sip/account', { token, signal }),
   historyConversations: (

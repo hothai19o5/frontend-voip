@@ -53,13 +53,24 @@ const seed = () => ({
   historySequence: 0,
 })
 const profile = ({ password: _password, ...user }) => user
-const directory = ({ id, username, displayName, status, sip }) => ({
+const directory = ({ id, username, displayName, status, sip }, online) => ({
   id,
   username,
   displayName,
   status,
   sip,
+  online,
 })
+const address = (user) => `sip:${user.sip.extension}@${user.sip.domain}`
+function onlineUsers(state, now = Date.now()) {
+  return new Set(Object.values(state.sessions)
+    .filter((session) =>
+      session.presenceUntil > now &&
+      Date.parse(session.expiresAt) > now &&
+      state.users.some((user) => user.id === session.userId && user.status === 'ACTIVE'),
+    )
+    .map((session) => session.userId))
+}
 function send(res, status, body) {
   res.writeHead(status, {
     'Content-Type':
@@ -178,6 +189,13 @@ http
       return problem(res, 401, 'UNAUTHORIZED')
     }
     const caller = state.users.find((u) => u.id === session.userId)
+    if (path === '/presence/heartbeat' && req.method === 'POST') {
+      if (state.control.presenceError) return problem(res, 503, 'PRESENCE_UNAVAILABLE')
+      const now = Date.now()
+      session.presenceUntil = now + (state.control.presenceTtlMs ?? 75000)
+      await save()
+      return send(res, 200, { onlineUserIds: [...onlineUsers(state, now)] })
+    }
     if (path.startsWith('/message-history/')) {
       state.history ||= []
       if (req.method === 'PUT' && path.startsWith('/message-history/send/')) {
@@ -190,7 +208,6 @@ http
           await save()
           return problem(res, 409, 'MESSAGE_CONFLICT')
         }
-        const address = (user) => `sip:${user.sip.extension}@${user.sip.domain}`
         // The existing SIP scenarios exercise the fallback explicitly.
         const recipient = state.control.webChat && state.users.find(
           (user) => user.sip && address(user) === peer,
@@ -245,8 +262,13 @@ http
         else entries = entries.filter((item) => item.peer === url.searchParams.get('peer'))
         entries = entries.filter((item) => Number(item.sequence) < before)
       }
-      const content = entries.slice(0, size).map(({ owner: _owner, ...item }) => path.endsWith('/conversations')
-        ? { peer: item.peer, name: item.name, lastMessage: item } : item)
+      const content = entries.slice(0, size).map(({ owner: _owner, ...item }) => {
+        const user = state.users.find((candidate) => candidate.sip && address(candidate) === item.peer)
+        const entry = { ...item, peerUserId: user?.id ?? null }
+        return path.endsWith('/conversations')
+          ? { peer: item.peer, name: item.name, lastMessage: entry }
+          : entry
+      })
       const nextCursor = entries.length > size ? entries[size - 1].sequence : null
       await save()
       if (state.control.historyReadDelay) await new Promise((resolve) => setTimeout(resolve, state.control.historyReadDelay))
@@ -289,8 +311,9 @@ http
               u.displayName.toLowerCase().includes(q)),
         )
         .sort((a, b) => a.username.localeCompare(b.username))
+      const online = onlineUsers(state)
       return send(res, 200, {
-        content: users.slice(page * size, (page + 1) * size).map(directory),
+        content: users.slice(page * size, (page + 1) * size).map((user) => directory(user, online.has(user.id))),
         page,
         size,
         totalElements: users.length,

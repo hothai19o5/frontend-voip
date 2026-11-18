@@ -12,6 +12,7 @@ import {
 import { PersonAvatar } from '../../components/app-ui'
 import { Button } from '../../components/ui/button'
 import type { Conversation } from './message-store'
+import { PresenceStatus } from '../presence/presence-status'
 
 export function ConversationProfile({
   conversation,
@@ -50,6 +51,9 @@ export function ConversationProfile({
                 ? `@${conversation.user.username}`
                 : conversation.peer.replace(/^sip:/, '')}
             </p>
+            <PresenceStatus
+              userId={conversation.user?.id ?? conversation.peerUserId}
+            />
           </div>
           <div className="profile-call-actions">
             <Button variant="ghost" disabled={!canCall} onClick={() => call()}>

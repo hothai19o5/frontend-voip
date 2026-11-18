@@ -14,6 +14,7 @@ import { Button } from '../../components/ui/button'
 import { useToast } from '../../components/toast-context'
 import { useMediaQuery } from '../../hooks/use-media-query'
 import type { DirectoryUser } from '../../lib/contracts'
+import { PresenceStatus } from '../presence/presence-status'
 import { useSip } from '../sip/sip-context'
 import { PeoplePicker } from '../users/people-picker'
 import { useMessages } from './message-context'
@@ -213,7 +214,13 @@ export function MessagesPage() {
                     onClick={() => setParams({ peer: conversation.peer })}
                     aria-pressed={selected?.peer === conversation.peer}
                   >
-                    <PersonAvatar name={conversation.name} />
+                    <span className="presence-avatar">
+                      <PersonAvatar name={conversation.name} />
+                      <PresenceStatus
+                        userId={conversation.user?.id ?? conversation.peerUserId}
+                        dot
+                      />
+                    </span>
                     <span className="conversation-preview">
                       <strong>{conversation.name}</strong>
                       <span>
@@ -292,8 +299,15 @@ export function MessagesPage() {
                 <PersonAvatar name={selected.name} />
                 <div className="thread-identity">
                   <h2>{selected.name}</h2>
-                  {selected.user ? (
-                    <span>@{selected.user.username}</span>
+                  {selected.user || selected.peerUserId ? (
+                    <span className="presence-details">
+                      {selected.user ? (
+                        <span>@{selected.user.username}</span>
+                      ) : null}
+                      <PresenceStatus
+                        userId={selected.user?.id ?? selected.peerUserId}
+                      />
+                    </span>
                   ) : null}
                 </div>
                 <div className="thread-header-actions">

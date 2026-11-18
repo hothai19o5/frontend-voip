@@ -72,8 +72,11 @@ Microphone/camera require HTTPS or localhost; WSS requires a trusted certificate
   collapses/expands the sidebar. Narrow layouts show one chat view at a time and
   open person details as a drawer.
 
-The API does not supply online presence; account status and PBX extension
-configuration are never presented as remote online registration.
+The people picker and app conversations show live Online/Offline status. An
+authenticated heartbeat refreshes presence every 5 seconds and on reconnect or
+return to the app. After a connection loss, the server expires the last
+heartbeat after 75 seconds. The UI shows an unknown state when it cannot check
+presence. Calls continue to depend on SIP registration.
 
 ## Session and communication lifetime
 

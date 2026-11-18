@@ -3,6 +3,7 @@ import { useSession } from './use-session'
 import { SipProvider } from '../sip/sip-provider'
 import { AppLayout } from '../../components/app-layout'
 import { MessageProvider } from '../messages/message-provider'
+import { PresenceProvider } from '../presence/presence-provider'
 
 export default function ProtectedApp() {
   const { session } = useSession()
@@ -17,9 +18,11 @@ export default function ProtectedApp() {
     )
   return (
     <MessageProvider key={session.accessToken} session={session}>
-      <SipProvider session={session}>
-        <AppLayout />
-      </SipProvider>
+      <PresenceProvider token={session.accessToken}>
+        <SipProvider session={session}>
+          <AppLayout />
+        </SipProvider>
+      </PresenceProvider>
     </MessageProvider>
   )
 }

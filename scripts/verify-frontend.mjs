@@ -632,6 +632,70 @@ try {
       await logout(page)
     },
   )
+  await check(
+    'application presence updates the directory and restored threads across tabs, network loss and logout',
+    async () => {
+      await control({ reset: true, webChat: true, sipError: true, presenceTtlMs: 9000 })
+      const firstCtx = await inlineContext()
+      const secondCtx = await inlineContext()
+      try {
+        const first = await firstCtx.newPage()
+        const second = await secondCtx.newPage()
+        await login(page, 'alice', false)
+        await page.getByRole('button', { name: 'Hội thoại mới', exact: true }).first().click()
+        const directory = page.getByRole('dialog', { name: 'Hội thoại mới', exact: true })
+        const bob = directory.locator('.person-option').filter({ hasText: 'Trần Hoàng Nam' })
+        const carol = directory.locator('.person-option').filter({ hasText: 'Lê Phương Linh' })
+        await bob.getByText('Offline', { exact: true }).waitFor()
+        await carol.getByText('Offline', { exact: true }).waitFor()
+        assert.equal(await directory.getByText('@alice', { exact: true }).count(), 0)
+
+        await login(first, 'member01', false)
+        await bob.getByText('Online', { exact: true }).waitFor()
+        await carol.getByText('Offline', { exact: true }).waitFor()
+        await shot(page, 'presence-directory.png')
+        await bob.click()
+        const thread = page.locator('.thread-identity')
+        await thread.getByText('Online', { exact: true }).waitFor()
+        await page.getByRole('button', { name: 'Gọi thoại từ hội thoại', exact: true }).click()
+        await page.locator('.toast').filter({ hasText: 'Chưa thể liên lạc lúc này' }).waitFor()
+        assert.equal(await page.locator('.call-panel').isHidden(), true)
+
+        const synced = second.waitForResponse((response) =>
+          response.url().endsWith('/presence/heartbeat') && response.ok(),
+        )
+        await login(second, 'member01', false)
+        await synced
+        await logout(first)
+        await page.waitForResponse((response) =>
+          response.url().endsWith('/presence/heartbeat') && response.ok(),
+        )
+        await thread.getByText('Online', { exact: true }).waitFor()
+
+        await secondCtx.setOffline(true)
+        await thread.getByText('Offline', { exact: true }).waitFor()
+        await send(page, 'Tin nhắn lúc người nhận offline')
+        await page.getByText('Tin nhắn lúc người nhận offline', { exact: true }).waitFor()
+        await secondCtx.setOffline(false)
+        await thread.getByText('Online', { exact: true }).waitFor()
+        await logout(second)
+        await thread.getByText('Offline', { exact: true }).waitFor()
+
+        await ctx.setOffline(true)
+        await thread.getByText('Chưa rõ trạng thái', { exact: true }).waitFor()
+        await ctx.setOffline(false)
+        await thread.getByText('Offline', { exact: true }).waitFor()
+        await logout(page)
+        await login(page, 'alice', false)
+        await thread.getByText('Offline', { exact: true }).waitFor()
+        await page.locator('.conversation-item [data-presence="offline"]').waitFor()
+        await shot(page, 'presence-restored-thread.png')
+      } finally {
+        await secondCtx.close()
+        await firstCtx.close()
+      }
+    },
+  )
   assert.deepEqual(errors, [])
   const stats = await (await fetch(controlUrl)).json()
   const report = {

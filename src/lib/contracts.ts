@@ -11,12 +11,17 @@ export interface DirectoryUser {
   displayName: string
   status: 'ACTIVE' | 'BLOCKED'
   sip: SipSummary | null
+  online: boolean
 }
 
-export interface UserProfile extends DirectoryUser {
+export interface UserProfile extends Omit<DirectoryUser, 'online'> {
   email: string
   role: 'USER' | 'ADMIN'
   createdAt: string
+}
+
+export interface PresenceSnapshot {
+  onlineUserIds: string[]
 }
 
 export interface AppSession {

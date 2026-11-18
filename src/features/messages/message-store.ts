@@ -16,6 +16,7 @@ export interface HistoryEntry extends Omit<ChatMessage, 'status'> {
   sequence: string
   name: string
   status: Exclude<ChatMessage['status'], 'unknown'>
+  peerUserId?: string | null
 }
 export interface HistoryPage<T> {
   content: T[]
@@ -31,6 +32,7 @@ export interface Conversation {
   peer: string
   name: string
   user?: DirectoryUser
+  peerUserId?: string | null
   messages: ChatMessage[]
   unread: number
   draft: string
@@ -132,6 +134,7 @@ export function messageReducer(
     for (const entry of entries) {
       const peer = normalizePeer(entry.peer)
       const previous = next[peer]
+      const peerUserId = entry.messages[0]?.peerUserId
       // Preserve live status and drafts when an HTTP snapshot overlaps local state.
       const messages = new Map<string, ChatMessage>(
         entry.messages.map((message) => [
@@ -174,6 +177,7 @@ export function messageReducer(
         }),
         unread: (previous?.unread ?? 0) + unread,
         messages: [...messages.values()].sort(compareMessages),
+        ...(peerUserId !== undefined ? { peerUserId } : {}),
         ...(action.type === 'history'
           ? { historyLoaded: true, historyCursor: action.page.nextCursor }
           : {}),

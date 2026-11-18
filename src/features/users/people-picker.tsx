@@ -19,6 +19,7 @@ import {
 import { useSession } from '../auth/use-session'
 import { useDirectory } from './use-directory'
 import type { DirectoryUser } from '../../lib/contracts'
+import { PresenceStatus } from '../presence/presence-status'
 
 function PeopleList({ select }: { select: (user: DirectoryUser) => void }) {
   const { session } = useSession()
@@ -91,7 +92,10 @@ function PeopleList({ select }: { select: (user: DirectoryUser) => void }) {
                   <PersonAvatar name={user.displayName} />
                   <span>
                     <strong>{user.displayName}</strong>
-                    <small>@{user.username}</small>
+                    <small className="presence-details">
+                      <span>@{user.username}</span>
+                      <PresenceStatus userId={user.id} />
+                    </small>
                   </span>
                   {user.status === 'BLOCKED' ? (
                     <small>Đã khóa</small>

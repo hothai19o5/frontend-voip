@@ -297,6 +297,56 @@ svg {
   background: #fff0f1;
   color: #c34251;
 }
+.presence-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: #647184;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.presence-badge[data-presence='online'] {
+  color: #23734b;
+}
+.presence-indicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.presence-badge[data-presence='unknown'] .presence-indicator {
+  background: transparent;
+  border: 1px solid currentColor;
+}
+.presence-avatar {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.presence-badge-dot {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 2px;
+  border-radius: 50%;
+  background: white;
+}
+.presence-badge-dot .presence-indicator {
+  width: 9px;
+  height: 9px;
+}
+.presence-details {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+.presence-details > span:not(.presence-badge) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .person-avatar {
   display: inline-flex;
   align-items: center;
@@ -1256,8 +1306,7 @@ svg {
   text-overflow: ellipsis;
   color: #22252a;
 }
-.thread-identity > span {
-  display: block;
+.thread-identity > .presence-details {
   font-size: 11px;
   color: #969ca6;
   margin-top: 3px;
