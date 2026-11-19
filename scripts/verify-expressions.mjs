@@ -229,29 +229,45 @@ try {
     },
   )
   await check(
-    'mock image/file buttons explain availability without opening uploads or sending SIP',
+    'images and files use web chat, support retry and download, and preserve the draft',
     async () => {
       const count = proxy.stats.messages
-      let chooser = false
-      page.on('filechooser', () => {
-        chooser = true
+      const settings = (body) => fetch(controlUrl, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       })
-      await page
-        .getByRole('button', { name: 'Gửi ảnh (chưa hỗ trợ)', exact: true })
-        .click()
-      await page
-        .locator('.toast')
-        .filter({ hasText: 'Chức năng gửi ảnh sẽ được bổ sung sau.' })
-        .waitFor()
-      await page
-        .getByRole('button', { name: 'Gửi file (chưa hỗ trợ)', exact: true })
-        .click()
-      await page
-        .locator('.toast')
-        .filter({ hasText: 'Chức năng gửi file sẽ được bổ sung sau.' })
-        .waitFor()
-      assert.equal(chooser, false)
-      assert.equal(await page.locator('input[type=file]').count(), 0)
+      const retainedDraft = await draft().inputValue()
+      await settings({ webChat: true, attachmentError: true })
+      try {
+        const choosing = page.waitForEvent('filechooser')
+        await page.getByRole('button', { name: 'Đính kèm ảnh', exact: true }).click()
+        await (await choosing).setFiles({
+          name: 'ảnh chia sẻ.png', mimeType: 'image/png',
+          buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jD/8AAAAASUVORK5CYII=', 'base64'),
+        })
+        const sendAttachment = page.getByRole('button', { name: 'Gửi tệp đính kèm', exact: true })
+        await sendAttachment.click()
+        await page.getByText('Kho lưu trữ tệp tạm thời không khả dụng. Vui lòng thử lại.', { exact: true }).waitFor()
+        await settings({ webChat: true, attachmentError: false })
+        await sendAttachment.click()
+        const image = page.locator('.message-history').getByRole('img', { name: 'ảnh chia sẻ.png' })
+        await image.waitFor()
+        await until(() => image.evaluate((element) => element.naturalWidth > 0))
+        await page.locator('input[aria-label="Chọn tệp"]').setInputFiles({
+          name: 'ghi chú.txt', mimeType: 'text/plain', buffer: Buffer.from('Xin chào'),
+        })
+        await sendAttachment.click()
+        const incoming = peer.locator('.message-history').getByRole('button', { name: 'Tải xuống ghi chú.txt' })
+        await incoming.waitFor()
+        const downloading = peer.waitForEvent('download')
+        await incoming.click()
+        assert.equal((await downloading).suggestedFilename(), 'ghi chú.txt')
+        assert.equal(await draft().inputValue(), retainedDraft)
+        await page.reload()
+        await page.locator('.message-history').getByRole('button', { name: 'Tải xuống ghi chú.txt' }).waitFor()
+      } finally {
+        await settings({ webChat: false, attachmentError: false })
+      }
       assert.equal(proxy.stats.messages, count)
     },
   )

@@ -122,6 +122,18 @@ assumptions:
       first login after a backend restart.
     source: scripts/verify-history.mjs, postman/mocks/voip/default.cjs, ../backend-voip/scripts/run-history-verification.ps1
     updated_at: '2026-11-18'
+  - id: chat-attachments
+    status: supported
+    claim: Browser chat sends an image or file through the authenticated attachment endpoint and restores the message after reload.
+    reason: The portable HTTP handler accepts multipart requests, retains the bytes with message history, and can simulate storage unavailability.
+    verification: >-
+      Headless Chrome exercised selection, retry after HTTP 503, image preview,
+      recipient download and draft preservation. A separate packaged backend run
+      used PostgreSQL and Docker MinIO for multipart upload, replay with the same
+      request ID and download on the recipient's first login. The portable
+      mock stores fixture bytes in memory.
+    source: scripts/verify-expressions.mjs; postman/mocks/voip/default.cjs; ../backend-voip/docs/ATTACHMENTS.md
+    updated_at: '2026-11-19'
 fingerprints:
   - id: frontend-implementation-2026-11-17
     date: '2026-11-17'

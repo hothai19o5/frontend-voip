@@ -2391,8 +2391,60 @@ svg {
   width: 19px;
   height: 19px;
 }
-.attachment-mock[data-slot='button'] {
-  color: #8792a3;
+.composer-attachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 8px;
+  padding: 2px 4px 2px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13px;
+}
+.composer-attachment span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-card {
+  max-width: min(100%, 350px);
+}
+.attachment-details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.attachment-details strong,
+.attachment-details small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.attachment-details small {
+  opacity: 0.85;
+  font-size: 11px;
+}
+.outgoing-message .attachment-details button:hover {
+  background: rgb(255 255 255 / 18%);
+  color: inherit;
+}
+.attachment-image {
+  min-height: 22px;
+  margin-bottom: 6px;
+}
+.attachment-image img {
+  max-width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+.shared-attachments {
+  display: grid;
+  gap: 8px;
+  padding: 8px 0 12px;
+  font-size: 12px;
 }
 .expression-picker {
   z-index: 60;

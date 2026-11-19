@@ -6,6 +6,7 @@ export const MessageContext = createContext<{
   conversations: MessageState
   dispatch: Dispatch<MessageAction>
   sendDirect: (peer: string, body: string) => Promise<'sent' | 'sip-only'>
+  sendAttachment: (peer: string, id: string, file: File) => Promise<void>
   historyLoading: boolean
   historyError: string
   moreConversations: boolean

@@ -55,6 +55,7 @@ const seed = () => ({
   dialedHistory: [],
   callSequence: 0,
   history: [],
+  attachmentBytes: {},
   historySequence: 0,
 })
 const profile = ({ password: _password, ...user }, control) => ({
@@ -117,6 +118,25 @@ function problem(res, status, code, errors) {
 }
 async function bodyOf(req) {
   if (req.body && typeof req.body === 'object') return req.body
+  const contentType = req.headers['content-type'] ?? ''
+  if (contentType.startsWith('multipart/form-data')) {
+    const chunks = []
+    for await (const chunk of req) chunks.push(chunk)
+    try {
+      const form = await new Response(Buffer.concat(chunks), {
+        headers: { 'Content-Type': contentType },
+      }).formData()
+      const file = form.get('file')
+      if (!file || typeof file === 'string') return {}
+      return {
+        peer: form.get('peer'),
+        attachment: { filename: file.name, contentType: file.type, size: file.size },
+        bytes: Buffer.from(await file.arrayBuffer()).toString('base64'),
+      }
+    } catch {
+      return {}
+    }
+  }
   let body = ''
   for await (const chunk of req) body += chunk
   try {
@@ -330,13 +350,32 @@ http
     }
     if (path.startsWith('/message-history/')) {
       state.history ||= []
-      if (req.method === 'PUT' && path.startsWith('/message-history/send/')) {
-        const { peer, body: content } = body
+      state.attachmentBytes ||= {}
+      const attachmentPath = path.startsWith('/message-history/attachments/')
+      if (attachmentPath && req.method === 'GET') {
+        const id = decodeURIComponent(path.split('/').at(-1))
+        const entry = state.history.find((item) => item.owner === caller.id && item.id === id)
+        await save()
+        if (!entry?.attachment) return problem(res, 404, 'ATTACHMENT_NOT_FOUND')
+        res.writeHead(200, { 'Content-Type': entry.attachment.contentType, 'Cache-Control': 'no-store' })
+        return res.end(Buffer.from(state.attachmentBytes[id], 'base64'))
+      }
+      if (req.method === 'PUT' && (attachmentPath || path.startsWith('/message-history/send/'))) {
+        const { peer, attachment, bytes } = body
+        const content = attachmentPath ? attachment?.filename : body.body
+        if (attachmentPath && !attachment?.size) {
+          await save()
+          return problem(res, 400, 'EMPTY_ATTACHMENT')
+        }
+        if (attachmentPath && state.control.attachmentError) {
+          await save()
+          return problem(res, 503, 'ATTACHMENT_UNAVAILABLE')
+        }
         const id = `chat:${caller.id}:${decodeURIComponent(path.split('/').at(-1))}`
         const existing = state.history.find(
           (item) => item.owner === caller.id && item.id === id,
         )
-        if (existing && (existing.peer !== peer || existing.body !== content)) {
+        if (existing && (existing.peer !== peer || existing.body !== content || state.attachmentBytes[id] !== bytes)) {
           await save()
           return problem(res, 409, 'MESSAGE_CONFLICT')
         }
@@ -357,12 +396,15 @@ http
           id, sequence: String(++state.historySequence), owner: caller.id,
           account: address(caller), peer, name: recipient.displayName,
           direction: 'outgoing', body: content, status: 'accepted', time,
+          ...(attachment ? { attachment } : {}),
         }
         if (!existing) {
+          if (attachment) state.attachmentBytes[id] = bytes
           state.history.push(message, {
             id, sequence: String(++state.historySequence), owner: recipient.id,
             account: peer, peer: address(caller), name: caller.displayName,
             direction: 'incoming', body: content, status: 'received', time, senderName: caller.displayName,
+            ...(attachment ? { attachment } : {}),
           })
         }
         await save()

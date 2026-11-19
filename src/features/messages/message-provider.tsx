@@ -75,6 +75,30 @@ export function MessageProvider({
     [session.accessToken, apply],
   )
 
+  const sendAttachment = useCallback(
+    async (peer: string, id: string, file: File) => {
+      const abort = lifetime.current
+      if (!abort || abort.signal.aborted)
+        throw new Error('Phiên trò chuyện đã kết thúc.')
+      try {
+        const message = await api.sendAttachment(
+          session.accessToken,
+          id,
+          peer,
+          file,
+          abort.signal,
+        )
+        if (!abort.signal.aborted)
+          apply({ type: 'history-updates', messages: [message] })
+      } catch (error) {
+        if (error instanceof ApiError && error.code === 'SIP_ONLY')
+          throw new Error('Chỉ có thể gửi ảnh và tệp cho tài khoản VoIP.')
+        throw error
+      }
+    },
+    [session.accessToken, apply],
+  )
+
   // Stable dispatch is a SIP connection dependency: history must never recreate
   // the SIP client or interrupt calls.
   const dispatch = useCallback(
@@ -248,6 +272,7 @@ export function MessageProvider({
         conversations,
         dispatch,
         sendDirect,
+        sendAttachment,
         historyLoading,
         historyError,
         moreConversations,

@@ -1,5 +1,17 @@
 import type { DirectoryUser } from '../../lib/contracts'
 
+export interface Attachment {
+  filename: string
+  contentType: string
+  size: number
+}
+
+const IMAGE_CONTENT_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
+
+export function isImageAttachment(attachment: Attachment) {
+  return IMAGE_CONTENT_TYPES.includes(attachment.contentType)
+}
+
 export interface ChatMessage {
   id: string
   sequence?: string
@@ -10,6 +22,7 @@ export interface ChatMessage {
   status: 'pending' | 'accepted' | 'failed' | 'received' | 'unknown'
   time: number
   senderName?: string
+  attachment?: Attachment
   historyState?: 'saving' | 'saved' | 'failed'
 }
 export interface HistoryEntry extends Omit<ChatMessage, 'status'> {

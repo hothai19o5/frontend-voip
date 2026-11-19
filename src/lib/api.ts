@@ -54,6 +54,12 @@ const messages: Record<string, string> = {
   TELEPHONY_REJECTED:
     'Dịch vụ gọi điện từ chối yêu cầu. Vui lòng liên hệ quản trị viên.',
   CHAT_UNAVAILABLE: 'Tài khoản này hiện không thể nhận tin nhắn.',
+  ATTACHMENT_TOO_LARGE: 'Tệp có thể nặng tối đa 10 MiB.',
+  EMPTY_ATTACHMENT: 'Tệp đã chọn không có nội dung.',
+  INVALID_ATTACHMENT: 'Không đọc được tệp đã chọn.',
+  ATTACHMENT_UNAVAILABLE:
+    'Kho lưu trữ tệp tạm thời không khả dụng. Vui lòng thử lại.',
+  ATTACHMENT_NOT_FOUND: 'Không tìm thấy tệp đính kèm.',
 }
 
 export class ApiError extends Error {
@@ -85,9 +91,12 @@ export async function request<T>(
     token?: string
     signal?: AbortSignal
     keepalive?: boolean
+    timeoutMs?: number
+    responseType?: 'blob'
   } = {},
 ): Promise<T> {
-  const timeout = AbortSignal.timeout(20000)
+  const timeout = AbortSignal.timeout(options.timeoutMs ?? 20000)
+  const multipart = options.body instanceof FormData
   const signal = options.signal
     ? AbortSignal.any([options.signal, timeout])
     : timeout
@@ -96,11 +105,17 @@ export async function request<T>(
     response = await fetch(`${baseUrl}/api/v1${path}`, {
       method: options.method ?? 'GET',
       headers: {
-        Accept: 'application/json',
-        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        Accept: options.responseType === 'blob' ? '*/*' : 'application/json',
+        ...(options.body && !multipart
+          ? { 'Content-Type': 'application/json' }
+          : {}),
         ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
       },
-      body: options.body ? JSON.stringify(options.body) : undefined,
+      body: multipart
+        ? (options.body as FormData)
+        : options.body
+          ? JSON.stringify(options.body)
+          : undefined,
       cache: 'no-store',
       credentials: 'omit',
       signal,
@@ -125,6 +140,7 @@ export async function request<T>(
     )
   }
   if (response.status === 204) return undefined as T
+  if (options.responseType === 'blob') return response.blob() as Promise<T>
   return response.json()
 }
 
@@ -227,6 +243,34 @@ export const api = {
       method: 'PUT',
       body: { peer, body },
       signal,
+    }),
+  sendAttachment: (
+    token: string,
+    id: string,
+    peer: string,
+    file: File,
+    signal: AbortSignal,
+  ) => {
+    const body = new FormData()
+    body.set('peer', peer)
+    body.set('file', file)
+    return request<HistoryEntry>(
+      `/message-history/attachments/${encodeURIComponent(id)}`,
+      {
+        token,
+        method: 'PUT',
+        body,
+        signal,
+        timeoutMs: 120000,
+      },
+    )
+  },
+  downloadAttachment: (token: string, id: string, signal?: AbortSignal) =>
+    request<Blob>(`/message-history/attachments/${encodeURIComponent(id)}`, {
+      token,
+      signal,
+      responseType: 'blob',
+      timeoutMs: 120000,
     }),
   saveHistory: (token: string, id: string, body: HistoryWrite) =>
     request<HistoryEntry>(

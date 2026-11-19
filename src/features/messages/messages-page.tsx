@@ -18,7 +18,7 @@ import { PresenceStatus } from '../presence/presence-status'
 import { useSip } from '../sip/sip-context'
 import { PeoplePicker } from '../users/people-picker'
 import { useMessages } from './message-context'
-import { normalizePeer } from './message-store'
+import { isImageAttachment, normalizePeer } from './message-store'
 import { MessageBubble } from './message-bubble'
 import { timeLabel } from './message-format'
 import { ConversationProfile } from './conversation-profile'
@@ -303,7 +303,9 @@ export function MessagesPage() {
                         ) : lastCall ? (
                           callPreview(lastCall)
                         ) : message ? (
-                          `${message.direction === 'outgoing' ? 'Bạn: ' : ''}${messagePreview(message.body)}`
+                          `${message.direction === 'outgoing' ? 'Bạn: ' : ''}${message.attachment
+                            ? `${isImageAttachment(message.attachment) ? 'Ảnh' : 'Tệp'}: ${message.attachment.filename}`
+                            : messagePreview(message.body)}`
                         ) : (
                           'Bắt đầu cuộc trò chuyện'
                         )}
