@@ -165,6 +165,7 @@ try {
       await page
         .getByLabel('Địa chỉ email', { exact: true })
         .fill('new@example.test')
+      await page.getByLabel('Số điện thoại', { exact: true }).fill('090 000 0077')
       await page.getByLabel('Mật khẩu', { exact: true }).fill('test-password')
       await page
         .getByRole('button', { name: 'Tạo tài khoản', exact: true })
@@ -182,10 +183,58 @@ try {
       await page.getByLabel('Mật khẩu', { exact: true }).fill('test-password')
       await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click()
       await page.waitForURL('**/messages')
+      assert.equal(await page.getByRole('link', { name: 'Cuộc gọi', exact: true }).count(), 0)
       await logout(page)
     },
   )
+  const recentNumber = '+842838223456'
+  await control({ phoneCallingEnabled: true })
   const aliceToken = await login(page)
+  await check('calls keypad, directory, redial and mobile layout reuse the SIP registration', async () => {
+    const connections = proxy.stats.connections
+    await page.getByRole('link', { name: 'Cuộc gọi', exact: true }).click()
+    await page.getByRole('heading', { name: 'Cuộc gọi', exact: true }).waitFor()
+    const number = page.getByLabel('Số điện thoại', { exact: true })
+    await page.getByRole('button', { name: '0', exact: true }).click()
+    await page.getByRole('button', { name: '9', exact: true }).click()
+    assert.equal(await number.inputValue(), '09')
+    await page.getByRole('button', { name: 'Xóa ký tự cuối', exact: true }).click()
+    assert.equal(await number.inputValue(), '0')
+    const dial = page.getByRole('button', { name: 'Gọi', exact: true })
+    await number.fill('+84 (90) 000 0001')
+    const before = proxy.stats.invites
+    await dial.click()
+    await page.getByText('Bạn đang quay số điện thoại của chính mình.', { exact: true }).waitFor()
+    assert.equal(proxy.stats.invites, before)
+
+    await number.fill('+84 (90) 000 0002')
+    await dial.click()
+    await until(() => proxy.stats.invites === before + 1 && proxy.stats.lastInviteTarget === '1002@pbx.test')
+    await page.getByRole('button', { name: 'Gọi lại +84900000002', exact: true }).waitFor()
+
+    await number.fill('(028) 3822 3456')
+    await dial.click()
+    await until(() => proxy.stats.invites === before + 2 && proxy.stats.lastInviteTarget === `${recentNumber}@pbx.test`)
+    const redial = page.getByRole('button', { name: `Gọi lại ${recentNumber}`, exact: true })
+    await redial.first().click()
+    await until(() => proxy.stats.invites === before + 3 && proxy.stats.lastInviteTarget === `${recentNumber}@pbx.test`)
+    await page.getByRole('tab', { name: 'Người dùng' }).click()
+    await page.getByRole('button', { name: 'Gọi Trần Hoàng Nam', exact: true }).click()
+    await until(() => proxy.stats.invites === before + 4 && proxy.stats.lastInviteTarget === '1002@pbx.test')
+    assert.equal(proxy.stats.connections, connections)
+    const closeError = page.locator('.toast-error button').last()
+    if (await closeError.isVisible()) await closeError.click()
+    await page.getByRole('tab', { name: 'Bàn phím' }).click()
+    for (const [width, height] of [[1440, 900], [1024, 768], [768, 1024], [390, 844]]) {
+      await page.setViewportSize({ width, height })
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      if (width === 1440 || width === 390) await shot(page, `calls-${width}.png`)
+    }
+    await page.setViewportSize(contextOptions.viewport)
+    await page.getByRole('link', { name: 'Đoạn chat', exact: true }).click()
+    await page.getByRole('heading', { name: 'Đoạn chat', exact: true }).waitFor()
+    assert.equal(await page.locator('.conversation-item').filter({ hasText: recentNumber }).count(), 0)
+  })
   await check(
     'refresh verifies the stored token and restores server profile without storing passwords',
     async () => {
@@ -325,7 +374,7 @@ try {
       )
       assert.deepEqual(
         await page.locator('.main-nav a').evaluateAll((links) => links.map((link) => link.getAttribute('href'))),
-        ['/messages'],
+        ['/messages', '/calls'],
       )
       assert.equal(await page.locator('.island').count(), 3)
       const bounds = await page.locator('.app-screen').boundingBox()

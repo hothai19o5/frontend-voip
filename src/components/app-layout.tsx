@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { MessageCircle, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import {
+  MessageCircle,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Phone,
+} from 'lucide-react'
 import { Brand } from './app-ui'
 import { Button } from './ui/button'
 import { AccountMenu } from './account-menu'
@@ -8,9 +13,11 @@ import { useToast } from './toast-context'
 import { useSip } from '../features/sip/sip-context'
 import { useMessages } from '../features/messages/message-context'
 import { useCallHistory } from '../features/calls/call-history-context'
+import { useSession } from '../features/auth/use-session'
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(true)
+  const { session } = useSession()
   const { state, error, retry, dismissError } = useSip()
   const notify = useToast()
   const wasRegistered = useRef(false)
@@ -83,6 +90,16 @@ export function AppLayout() {
               <span className="nav-unread">{unread > 99 ? '99+' : unread}</span>
             ) : null}
           </NavLink>
+          {session?.user.phoneCallingEnabled ? (
+            <NavLink
+              to="/calls"
+              aria-label="Cuộc gọi"
+              title={collapsed ? 'Cuộc gọi' : undefined}
+            >
+              <Phone />
+              <span className="sidebar-label">Cuộc gọi</span>
+            </NavLink>
+          ) : null}
         </nav>
         <div className="sidebar-bottom">
           <AccountMenu collapsed={collapsed} />

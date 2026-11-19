@@ -15,6 +15,7 @@ const seed = () => ({
       username: 'alice',
       displayName: 'Nguyễn Minh Anh',
       email: 'alice@example.test',
+      phoneNumber: '+84900000001',
       password: 'test-password',
       role: 'USER',
       status: 'ACTIVE',
@@ -39,6 +40,7 @@ const seed = () => ({
       username: `member${String(i + 1).padStart(2, '0')}`,
       displayName: name,
       email: `member${i}@example.test`,
+      phoneNumber: `+849000000${String(i + 2).padStart(2, '0')}`,
       password: 'test-password',
       role: 'USER',
       status: i === 4 ? 'BLOCKED' : 'ACTIVE',
@@ -50,11 +52,15 @@ const seed = () => ({
   control: {},
   calls: {},
   callHistory: [],
+  dialedHistory: [],
   callSequence: 0,
   history: [],
   historySequence: 0,
 })
-const profile = ({ password: _password, ...user }) => user
+const profile = ({ password: _password, ...user }, control) => ({
+  ...user,
+  phoneCallingEnabled: !!control.phoneCallingEnabled,
+})
 const directory = ({ id, username, displayName, status, sip }, online) => ({
   id,
   username,
@@ -64,6 +70,10 @@ const directory = ({ id, username, displayName, status, sip }, online) => ({
   online,
 })
 const address = (user) => `sip:${user.sip.extension}@${user.sip.domain}`
+function normalizedPhone(value) {
+  const number = String(value ?? '').replace(/[\p{Zs}()-]/gu, '')
+  return number.startsWith('0') ? `+84${number.slice(1)}` : number
+}
 function onlineUsers(state, now = Date.now()) {
   return new Set(Object.values(state.sessions)
     .filter((session) =>
@@ -138,6 +148,7 @@ http
     state.calls[`${req.method} ${path}`] =
       (state.calls[`${req.method} ${path}`] || 0) + 1
     if (path === '/auth/register' && req.method === 'POST') {
+      const phoneNumber = normalizedPhone(body.phoneNumber)
       if (
         !/^[A-Za-z0-9_.-]{3,32}$/.test(body.username ?? '') ||
         !body.email?.includes('@') ||
@@ -155,11 +166,20 @@ http
         await save()
         return problem(res, 409, 'EMAIL_TAKEN')
       }
+      if (!/^\+[1-9][0-9]{7,14}$/.test(phoneNumber)) {
+        await save()
+        return problem(res, 400, 'INVALID_PHONE_NUMBER')
+      }
+      if (state.users.some((u) => u.phoneNumber === phoneNumber)) {
+        await save()
+        return problem(res, 409, 'PHONE_ALREADY_IN_USE')
+      }
       const user = {
         ...body,
         id: randomUUID(),
         username: body.username.toLowerCase(),
         email: body.email.toLowerCase(),
+        phoneNumber,
         role: 'USER',
         status: 'ACTIVE',
         createdAt: new Date().toISOString(),
@@ -167,7 +187,7 @@ http
       }
       state.users.push(user)
       await save()
-      return send(res, 201, profile(user))
+      return send(res, 201, profile(user, state.control))
     }
     if (path === '/auth/login' && req.method === 'POST') {
       const user = state.users.find(
@@ -190,7 +210,7 @@ http
         accessToken,
         tokenType: 'Bearer',
         expiresAt,
-        user: profile(user),
+        user: profile(user, state.control),
       })
     }
     const token = req.headers.authorization?.replace(/^Bearer /, '')
@@ -204,6 +224,26 @@ http
       return problem(res, 401, 'UNAUTHORIZED')
     }
     const caller = state.users.find((u) => u.id === session.userId)
+    if (path === '/calls/resolve' && req.method === 'POST') {
+      await save()
+      if (!state.control.phoneCallingEnabled) return problem(res, 503, 'PHONE_CALLING_DISABLED')
+      const phoneNumber = normalizedPhone(body.phoneNumber)
+      if (!/^\+[1-9][0-9]{7,14}$/.test(phoneNumber)) return problem(res, 400, 'INVALID_PHONE_NUMBER')
+      const target = state.users.find((user) => user.phoneNumber === phoneNumber)
+      if (target?.id === caller.id) return problem(res, 409, 'SELF_CALL')
+      if (target && (target.status !== 'ACTIVE' || !target.sip)) return problem(res, 409, 'APP_DESTINATION_UNAVAILABLE')
+      if (!target && !/^\+84([35789][0-9]{8}|2[0-9]{9})$/.test(phoneNumber)) return problem(res, 403, 'PSTN_DESTINATION_DENIED')
+      return send(res, 200, {
+        type: target ? 'APP_TO_APP' : 'APP_TO_PHONE', phoneNumber,
+        sipUri: target ? address(target) : `sip:${phoneNumber}@${caller.sip.domain}`,
+        displayName: target?.displayName ?? null,
+      })
+    }
+    if (path === '/calls/dialed' && req.method === 'GET') {
+      await save()
+      return send(res, 200, state.dialedHistory.filter((call) => call.owner === caller.id)
+        .sort((a, b) => b.endedAt - a.endedAt).slice(0, 30).map(({ owner: _owner, ...call }) => call))
+    }
     if (path === '/presence/heartbeat' && req.method === 'POST') {
       if (state.control.presenceError) return problem(res, 503, 'PRESENCE_UNAVAILABLE')
       const now = Date.now()
@@ -225,6 +265,19 @@ http
         return send(res, 200, missedCalls(matching))
       }
       if (req.method === 'POST') {
+        if (body.dialedPhoneNumber) {
+          const phoneNumber = body.dialedPhoneNumber
+          const pstn = body.peer.startsWith(`sip:${phoneNumber}@`)
+          if (!state.dialedHistory.some((call) => call.owner === caller.id && call.id === body.id)) {
+            const { id, name, status, startedAt, answeredAt, endedAt } = body
+            state.dialedHistory.push({ owner: caller.id, id, phoneNumber, name, status, startedAt, answeredAt, endedAt,
+              route: pstn ? 'APP_TO_PHONE' : 'APP_TO_APP' })
+          }
+          if (pstn) {
+            await save()
+            return send(res, 204)
+          }
+        }
         const existing = records.find((call) => call.id === body.id && call.direction === body.direction)
         if (existing) {
           if (existing.peer !== body.peer) return problem(res, 409, 'CALL_CONFLICT')
@@ -344,7 +397,7 @@ http
     }
     if (path === '/users/me' && req.method === 'GET') {
       await save()
-      return send(res, 200, profile(caller))
+      return send(res, 200, profile(caller, state.control))
     }
     if (path === '/sip/account' && req.method === 'GET') {
       await save()

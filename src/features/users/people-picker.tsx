@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   MessageCircle,
+  Phone,
   RefreshCw,
   Search,
   Users,
@@ -21,7 +22,15 @@ import { useDirectory } from './use-directory'
 import type { DirectoryUser } from '../../lib/contracts'
 import { PresenceStatus } from '../presence/presence-status'
 
-function PeopleList({ select }: { select: (user: DirectoryUser) => void }) {
+export function PeopleList({
+  select,
+  action = 'message',
+  disabled = false,
+}: {
+  select: (user: DirectoryUser) => void
+  action?: 'message' | 'call'
+  disabled?: boolean
+}) {
   const { session } = useSession()
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState({ q: '', page: 0 })
@@ -82,31 +91,45 @@ function PeopleList({ select }: { select: (user: DirectoryUser) => void }) {
           </div>
         ) : data?.content.length ? (
           <ul className="people-list">
-            {data.content.map((user) => (
-              <li key={user.id}>
-                <button
-                  className="person-option"
-                  onClick={() => select(user)}
-                  disabled={!user.sip || user.status !== 'ACTIVE'}
-                >
-                  <PersonAvatar name={user.displayName} />
-                  <span>
-                    <strong>{user.displayName}</strong>
-                    <small className="presence-details">
-                      <span>@{user.username}</span>
-                      <PresenceStatus userId={user.id} />
-                    </small>
-                  </span>
-                  {user.status === 'BLOCKED' ? (
-                    <small>Đã khóa</small>
-                  ) : !user.sip ? (
-                    <small>Chưa thể liên lạc</small>
-                  ) : (
-                    <MessageCircle size={18} />
-                  )}
-                </button>
-              </li>
-            ))}
+            {data.content.map((user) => {
+              const unavailable =
+                !user.sip ||
+                (action === 'call' &&
+                  (user.sip.provisioningStatus !== 'READY' ||
+                    !user.sip.extensionPresent))
+              return (
+                <li key={user.id}>
+                  <button
+                    className="person-option"
+                    onClick={() => select(user)}
+                    disabled={
+                      disabled || unavailable || user.status !== 'ACTIVE'
+                    }
+                    aria-label={
+                      action === 'call' ? `Gọi ${user.displayName}` : undefined
+                    }
+                  >
+                    <PersonAvatar name={user.displayName} />
+                    <span>
+                      <strong>{user.displayName}</strong>
+                      <small className="presence-details">
+                        <span>@{user.username}</span>
+                        <PresenceStatus userId={user.id} />
+                      </small>
+                    </span>
+                    {user.status === 'BLOCKED' ? (
+                      <small>Đã khóa</small>
+                    ) : unavailable ? (
+                      <small>Chưa thể liên lạc</small>
+                    ) : action === 'call' ? (
+                      <Phone size={18} />
+                    ) : (
+                      <MessageCircle size={18} />
+                    )}
+                  </button>
+                </li>
+              )
+            })}
           </ul>
         ) : (
           <div className="empty-state">

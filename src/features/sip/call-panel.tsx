@@ -14,6 +14,7 @@ import { Brand, PersonAvatar } from '../../components/app-ui'
 import { Button } from '../../components/ui/button'
 import { useSip } from './sip-context'
 import { callLabels } from './types'
+import { isPstnPeer } from '../calls/phone-number'
 
 function Duration({ since }: { since: number | null }) {
   const [now, setNow] = useState(() => Date.now())
@@ -43,14 +44,15 @@ export function CallPanel({
   const sip = useSip()
   const { state } = sip
   const peer = state.peer.replace(/^sip:/, '').split('@')[0]
-  const name = sip.peerName || peer
+  const byPhone = !!sip.pendingPhone || isPstnPeer(state.peer)
+  const name = sip.pendingPhone || sip.peerName || peer
   const video =
     state.call === 'active' && (state.hasVideo || state.offeredVideo)
   const pending = state.call === 'answering' || state.call === 'ending'
   return (
     <section
       className={`call-panel ${video ? 'with-video' : ''}`}
-      hidden={state.call === 'idle'}
+      hidden={state.call === 'idle' && !sip.pendingPhone}
       aria-label="Cuộc gọi hiện tại"
     >
       <div className="call-panel-header">
@@ -64,10 +66,10 @@ export function CallPanel({
       <div className="call-person">
         <PersonAvatar name={name || '?'} large />
         <h2>{name}</h2>
-        <p>Máy nhánh {peer}</p>
+        {byPhone ? null : <p>Máy nhánh {peer}</p>}
         <div className="call-indicator" role="status" aria-live="polite">
           <span className="status-dot" />
-          {callLabels[state.call]}
+          {sip.pendingPhone ? 'Đang tra số…' : callLabels[state.call]}
           {state.call === 'active' ? <Duration since={sip.startedAt} /> : null}
         </div>
       </div>
@@ -135,7 +137,9 @@ export function CallPanel({
             onClick={() => void sip.hangup()}
           >
             <PhoneOff />
-            {state.call === 'outgoing' ? 'Hủy cuộc gọi' : 'Kết thúc cuộc gọi'}
+            {sip.pendingPhone || state.call === 'outgoing'
+              ? 'Hủy cuộc gọi'
+              : 'Kết thúc cuộc gọi'}
           </Button>
         </>
       )}

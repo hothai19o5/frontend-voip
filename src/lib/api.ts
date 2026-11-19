@@ -17,6 +17,8 @@ import type {
   CallEntry,
   CallPage,
   CallResult,
+  DialedCall,
+  ResolvedPhoneCall,
   CallThread,
   MissedCalls,
 } from '../features/calls/call-history-context'
@@ -29,6 +31,14 @@ const messages: Record<string, string> = {
   FORBIDDEN: 'Bạn không có quyền thực hiện thao tác này.',
   USERNAME_TAKEN: 'Tên đăng nhập đã được sử dụng.',
   EMAIL_TAKEN: 'Địa chỉ email đã được sử dụng.',
+  INVALID_PHONE_NUMBER: 'Vui lòng nhập số điện thoại hợp lệ.',
+  PHONE_ALREADY_IN_USE: 'Số điện thoại đã được sử dụng.',
+  SELF_CALL: 'Bạn đang quay số điện thoại của chính mình.',
+  APP_DESTINATION_UNAVAILABLE: 'Người nhận hiện không thể liên lạc.',
+  CALLER_SIP_UNAVAILABLE: 'Máy nhánh của bạn chưa sẵn sàng để gọi.',
+  PSTN_DESTINATION_DENIED:
+    'Chỉ hỗ trợ gọi tới số di động và cố định tại Việt Nam.',
+  PHONE_CALLING_DISABLED: 'Tính năng quay số chưa được bật.',
   ACCOUNT_CONFLICT: 'Tài khoản đã tồn tại. Vui lòng kiểm tra lại thông tin.',
   PROVISIONING_PENDING:
     'Tài khoản đang chờ hoàn tất cấu hình gọi điện. Vui lòng liên hệ quản trị viên.',
@@ -119,6 +129,15 @@ export async function request<T>(
 }
 
 export const api = {
+  resolvePhoneCall: (token: string, phoneNumber: string, signal: AbortSignal) =>
+    request<ResolvedPhoneCall>('/calls/resolve', {
+      token,
+      method: 'POST',
+      body: { phoneNumber },
+      signal,
+    }),
+  dialedCalls: (token: string, signal?: AbortSignal) =>
+    request<DialedCall[]>('/calls/dialed', { token, signal }),
   login: (username: string, password: string, signal?: AbortSignal) =>
     request<AppSession>('/auth/login', {
       method: 'POST',

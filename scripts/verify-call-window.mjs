@@ -105,7 +105,7 @@ try {
       await fetch(controlUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reset: true }),
+        body: JSON.stringify({ reset: true, phoneCallingEnabled: true }),
       })
     ).status,
     200,
@@ -113,6 +113,38 @@ try {
   await login(main, 'alice')
   await login(peer, 'member01')
   await until(() => proxy.accounts.size === 2)
+  await check('canceling a phone lookup closes its popup without sending an INVITE', async () => {
+    const path = '**/api/v1/calls/resolve'
+    const hold = Promise.withResolvers()
+    const finished = Promise.withResolvers()
+    const delayed = async (route) => {
+      await hold.promise
+      await route.continue().catch(() => {})
+      finished.resolve()
+    }
+    await main.route(path, delayed)
+    try {
+      await main.getByRole('link', { name: 'Cuộc gọi', exact: true }).click()
+      await main.getByLabel('Số điện thoại', { exact: true }).fill('0900000002')
+      const lookup = main.waitForRequest(path)
+      const opening = main.waitForEvent('popup')
+      const before = proxy.stats.invites
+      await main.getByRole('button', { name: 'Gọi', exact: true }).click()
+      const popup = await opening
+      await lookup
+      await popup.getByText('Đang tra số…', { exact: true }).waitFor()
+      const closed = popup.waitForEvent('close')
+      await popup.getByRole('button', { name: 'Hủy cuộc gọi', exact: true }).click()
+      await closed
+      hold.resolve()
+      await finished.promise
+      assert.equal(proxy.stats.invites, before)
+    } finally {
+      hold.resolve()
+      await main.unroute(path, delayed)
+    }
+    await main.getByRole('link', { name: 'Đoạn chat', exact: true }).click()
+  })
   await selectPeer()
   const connections = proxy.stats.connections,
     registrations = proxy.stats.registrations

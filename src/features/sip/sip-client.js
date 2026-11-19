@@ -141,6 +141,9 @@ export class SipClient {
       startedAt: call.startedAt,
       answeredAt: call.answeredAt,
       endedAt,
+      ...(call.dialedPhoneNumber
+        ? { dialedPhoneNumber: call.dialedPhoneNumber }
+        : {}),
     })
   }
 
@@ -360,7 +363,8 @@ export class SipClient {
       throw new Error('Cần đăng ký SIP trước.')
   }
 
-  async call(target, video, name = '') {
+  /** @param {string} [dialedPhoneNumber] */
+  async call(target, video, name = '', dialedPhoneNumber) {
     this.requireRegistered()
     if (this.session || this.callPending)
       throw new Error('Đang có một cuộc gọi khác.')
@@ -373,6 +377,7 @@ export class SipClient {
       peer,
       name,
       video,
+      dialedPhoneNumber,
       startedAt: Date.now(),
       answeredAt: null,
     }

@@ -18,6 +18,8 @@ export interface UserProfile extends Omit<DirectoryUser, 'online'> {
   email: string
   role: 'USER' | 'ADMIN'
   createdAt: string
+  phoneNumber: string | null
+  phoneCallingEnabled: boolean
 }
 
 export interface PresenceSnapshot {
@@ -53,4 +55,5 @@ export interface RegisterInput {
   email: string
   displayName: string
   password: string
+  phoneNumber: string
 }

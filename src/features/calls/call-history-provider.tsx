@@ -7,6 +7,7 @@ import { useMessages } from '../messages/message-context'
 import { normalizePeer } from '../messages/message-store'
 import { callKey, CallHistoryContext } from './call-history-context'
 import type { CallResult, CallThread } from './call-history-context'
+import { isPstnPeer } from './phone-number'
 
 export function CallHistoryProvider({
   token,
@@ -92,6 +93,13 @@ export function CallHistoryProvider({
     (call: CallResult) => {
       const peer = normalizePeer(call.peer)
       const result = { ...call, peer }
+      if (
+        result.dialedPhoneNumber &&
+        isPstnPeer(peer, result.dialedPhoneNumber)
+      ) {
+        writer.current?.enqueue(callKey(result), result)
+        return
+      }
       dispatch({ type: 'call-peers', peers: [result] })
       setObserved((current) => ({
         ...current,

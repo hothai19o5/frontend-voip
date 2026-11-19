@@ -1,5 +1,23 @@
 import { createContext, useContext } from 'react'
 
+export interface DialedCall {
+  id: string
+  phoneNumber: string
+  route: 'APP_TO_APP' | 'APP_TO_PHONE'
+  name: string | null
+  status: CallStatus
+  startedAt: number
+  answeredAt: number | null
+  endedAt: number
+}
+
+export interface ResolvedPhoneCall {
+  type: DialedCall['route']
+  phoneNumber: string
+  sipUri: string
+  displayName: string | null
+}
+
 export type CallStatus =
   | 'COMPLETED'
   | 'MISSED'
@@ -20,6 +38,7 @@ type CallDetails = {
   startedAt: number
   answeredAt: number | null
   endedAt: number
+  dialedPhoneNumber?: string
 }
 
 export type CallResult = CallDetails & { id: string }

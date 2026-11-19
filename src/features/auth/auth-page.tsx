@@ -56,6 +56,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
             password,
             displayName,
             email: String(form.get('email')).trim(),
+            phoneNumber: String(form.get('phoneNumber')).trim(),
           },
           abort.signal,
         )
@@ -72,7 +73,7 @@ export function AuthPage({ register = false }: { register?: boolean }) {
         sessionStore.start(next)
         const from = location.state?.from
         navigate(
-          typeof from === 'string' && /^\/messages(\?|$)/.test(from)
+          typeof from === 'string' && /^\/(messages|calls)(\?|$)/.test(from)
             ? from
             : '/messages',
           { replace: true },
@@ -89,7 +90,13 @@ export function AuthPage({ register = false }: { register?: boolean }) {
               : ''),
           tone: 'error',
         })
-        if (cause instanceof ApiError) setFields(cause.fields)
+        if (cause instanceof ApiError) {
+          setFields(
+            ['INVALID_PHONE_NUMBER', 'PHONE_ALREADY_IN_USE'].includes(cause.code)
+              ? { phoneNumber: cause.message }
+              : cause.fields,
+          )
+        }
       }
     } finally {
       if (!abort.signal.aborted) setBusy(false)
@@ -228,6 +235,20 @@ export function AuthPage({ register = false }: { register?: boolean }) {
                   maxLength={254}
                   autoComplete="email"
                   error={fields.email}
+                />
+              ) : null}
+              {register ? (
+                <Field
+                  id="phoneNumber"
+                  name="phoneNumber"
+                  type="tel"
+                  label="Số điện thoại"
+                  placeholder="Nhập số điện thoại"
+                  icon={<Phone />}
+                  required
+                  maxLength={40}
+                  autoComplete="tel"
+                  error={fields.phoneNumber}
                 />
               ) : null}
               <Field

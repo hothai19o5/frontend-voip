@@ -10,6 +10,7 @@ import { ToastProvider } from './components/toast-provider'
 import { SessionNotifications } from './components/session-notifications'
 
 const ProtectedApp = lazy(() => import('./features/auth/protected-app'))
+const CallsPage = lazy(() => import('./features/calls/calls-page'))
 const MessagesPage = lazy(() =>
   import('./features/messages/messages-page').then((module) => ({
     default: module.MessagesPage,
@@ -53,6 +54,16 @@ export default function App() {
             />
             <Route element={<ProtectedApp />}>
               <Route path="/messages" element={<MessagesPage />} />
+              <Route
+                path="/calls"
+                element={
+                  session?.user.phoneCallingEnabled ? (
+                    <CallsPage />
+                  ) : (
+                    <Navigate to="/messages" replace />
+                  )
+                }
+              />
             </Route>
             <Route
               path="*"

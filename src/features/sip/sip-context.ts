@@ -13,10 +13,12 @@ interface SipContextValue {
   error: string
   loading: boolean
   peerName: string
+  pendingPhone: string
   startedAt: number | null
   retry: () => void
   call: (user: DirectoryUser, video?: boolean) => Promise<void>
   callAddress: (peer: string, name: string, video?: boolean) => Promise<void>
+  callPhone: (number: string) => Promise<void>
   sendMessage: (peer: string, body: string) => Promise<boolean>
   answer: (video?: boolean) => Promise<void>
   hangup: () => Promise<void>

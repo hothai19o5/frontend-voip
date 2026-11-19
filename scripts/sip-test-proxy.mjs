@@ -70,7 +70,10 @@ export function createSipProxy(port = 15061) {
         response(socket, message, 200, 'OK')
         return
       }
-      if (method === 'INVITE') stats.invites++
+      if (method === 'INVITE') {
+        stats.invites++
+        stats.lastInviteTarget = normalize(message.first.split(' ')[1])
+      }
       if (method === 'MESSAGE') stats.messages++
       if (method === 'BYE') stats.byes++
       if (method === 'OPTIONS') {

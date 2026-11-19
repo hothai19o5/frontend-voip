@@ -13,8 +13,10 @@ import type { MessageEvent } from '../messages/message-store'
 import { useCallWindow } from './use-call-window'
 import { CallVideo } from './call-video'
 import { Button } from '../../components/ui/button'
+import { useToast } from '../../components/toast-context'
 import { useCallHistory } from '../calls/call-history-context'
 import type { CallResult } from '../calls/call-history-context'
+import { dialableNumber } from '../calls/phone-number'
 
 // This provider and all media elements sit ABOVE the route outlet. Navigation
 // never destroys the user agent or detaches a call's media elements.
@@ -26,6 +28,8 @@ export function SipProvider({
   children: ReactNode
 }) {
   const client = useRef<InstanceType<typeof SipClient> | null>(null)
+  const pendingLookup = useRef<AbortController | null>(null)
+  const notify = useToast()
   const { dispatch } = useMessages()
   const { recordCall } = useCallHistory()
   const remoteAudio = useRef<HTMLAudioElement>(null)
@@ -37,6 +41,7 @@ export function SipProvider({
   const [loading, setLoading] = useState(true)
   const [attempt, setAttempt] = useState(0)
   const [peerName, setPeerName] = useState('')
+  const [pendingPhone, setPendingPhone] = useState('')
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const {
     container,
@@ -44,6 +49,15 @@ export function SipProvider({
     close: closeCallWindow,
     syncCall,
   } = useCallWindow()
+
+  const cancelLookup = useCallback(() => {
+    const current = pendingLookup.current
+    if (!current) return false
+    pendingLookup.current = null
+    current.abort()
+    setPendingPhone('')
+    return true
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -57,7 +71,9 @@ export function SipProvider({
       onState: (next: SipState) => {
         if (!alive) return
         setState(next)
-        syncCall(next.call)
+        if (next.call !== 'idle' || next.connection !== 'registered')
+          cancelLookup()
+        if (!pendingLookup.current) syncCall(next.call)
         if (next.call === 'active') setStartedAt((value) => value ?? Date.now())
         if (next.call === 'idle') {
           setStartedAt(null)
@@ -101,6 +117,7 @@ export function SipProvider({
     return () => {
       alive = false
       abort.abort()
+      if (cancelLookup()) closeCallWindow()
       client.current = null
       void service.disconnect().catch(() => {})
     }
@@ -111,6 +128,8 @@ export function SipProvider({
     dispatch,
     recordCall,
     syncCall,
+    cancelLookup,
+    closeCallWindow,
   ])
 
   const run = useCallback(
@@ -126,7 +145,11 @@ export function SipProvider({
       } catch (cause) {
         if (client.current === service) setError(errorMessage(cause))
       } finally {
-        if (client.current === service && service.state.call === 'idle')
+        if (
+          client.current === service &&
+          service.state.call === 'idle' &&
+          !pendingLookup.current
+        )
           closeCallWindow()
       }
     },
@@ -148,11 +171,57 @@ export function SipProvider({
   }
 
   const callAddress = (peer: string, name: string, video = false) => {
+    if (pendingLookup.current) return Promise.resolve()
     if (state.call === 'idle') {
       setPeerName(name)
       openCallWindow()
     }
     return run((service) => service.call(peer, video, name))
+  }
+
+  const callPhone = async (number: string) => {
+    const digits = dialableNumber(number)
+    const service = client.current
+    if (
+      !session.user.phoneCallingEnabled ||
+      !service ||
+      !digits ||
+      pendingLookup.current ||
+      service.state.call !== 'idle' ||
+      service.state.connection !== 'registered'
+    )
+      return
+    const lookup = new AbortController()
+    pendingLookup.current = lookup
+    const label = number.trim()
+    setError('')
+    setPendingPhone(label)
+    openCallWindow()
+    try {
+      const route = await api.resolvePhoneCall(
+        session.accessToken,
+        digits,
+        lookup.signal,
+      )
+      if (pendingLookup.current !== lookup) return
+      pendingLookup.current = null
+      setPendingPhone('')
+      setPeerName(label)
+      await run((sip) =>
+        sip.call(
+          route.sipUri,
+          false,
+          route.displayName ?? '',
+          route.phoneNumber,
+        ),
+      )
+    } catch (cause) {
+      if (pendingLookup.current !== lookup) return
+      pendingLookup.current = null
+      setPendingPhone('')
+      closeCallWindow()
+      notify({ message: errorMessage(cause), tone: 'error' })
+    }
   }
 
   const panel = (
@@ -178,9 +247,10 @@ export function SipProvider({
         error,
         loading,
         peerName,
+        pendingPhone,
         startedAt,
         retry: () => {
-          if (state.call !== 'idle' || loading) return
+          if (state.call !== 'idle' || loading || pendingLookup.current) return
           setLoading(true)
           setError('')
           setAccount(null)
@@ -189,6 +259,7 @@ export function SipProvider({
         },
         call,
         callAddress,
+        callPhone,
         sendMessage: async (peer, body) => {
           const service = client.current
           if (!service) return false
@@ -202,7 +273,10 @@ export function SipProvider({
           }
         },
         answer: (video = false) => run((service) => service.answer(video)),
-        hangup: () => run((service) => service.hangup()),
+        hangup: async () => {
+          if (cancelLookup()) closeCallWindow()
+          else await run((service) => service.hangup())
+        },
         toggle: (kind) => run((service) => service.toggleTrack(kind)),
         replay: () =>
           run(async (service) => {
@@ -228,7 +302,7 @@ export function SipProvider({
         <video ref={localVideo} autoPlay playsInline muted />
       </div>
       {container ? createPortal(panel, container) : panel}
-      {container && state.call !== 'idle' ? (
+      {container && (state.call !== 'idle' || pendingPhone) ? (
         <aside
           className="call-detached-bar"
           aria-label="Cuộc gọi trong cửa sổ riêng"

@@ -91,6 +91,12 @@ export function AccountMenu({ collapsed }: { collapsed: boolean }) {
               <dt>Email</dt>
               <dd>{user.email}</dd>
             </div>
+            {user.phoneNumber ? (
+              <div>
+                <dt>Số điện thoại</dt>
+                <dd>{user.phoneNumber}</dd>
+              </div>
+            ) : null}
             {user.sip ? (
               <div>
                 <dt>Máy nhánh</dt>
