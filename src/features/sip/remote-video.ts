@@ -1,5 +1,37 @@
+type VideoCounters = Pick<
+  RTCInboundRtpStreamStats,
+  'bytesReceived' | 'packetsReceived' | 'framesReceived' | 'framesDecoded'
+> &
+  Pick<RTCOutboundRtpStreamStats, 'bytesSent'>
+
+type VideoStat = VideoCounters & {
+  type: RTCStatsType
+  kind?: string
+  mediaType?: string
+  isRemote?: boolean
+  codecId?: string
+  mimeType?: string
+}
+
+export type VideoDiagnostics = Partial<ReturnType<typeof videoSnapshot>> & {
+  bytesPerSecond?: number | null
+  playbackError?: string
+  statsError?: string
+}
+
+type RemoteVideoOptions = {
+  peer: RTCPeerConnection
+  video: HTMLVideoElement | null
+  onDiagnostics: (info: VideoDiagnostics) => void
+  createStream?: (tracks: MediaStreamTrack[]) => MediaStream
+}
+
 // Only observe negotiated media here. Do not change SDP, codecs or SIP.js handlers.
-export function videoSnapshot(peer, report, video) {
+export function videoSnapshot(
+  peer: RTCPeerConnection,
+  report: ReadonlyMap<string, VideoStat>,
+  video: HTMLVideoElement | null,
+) {
   const entries = [...report.values()]
   const incoming = entries.filter(
     (stat) =>
@@ -13,9 +45,9 @@ export function videoSnapshot(peer, report, video) {
       !stat.isRemote &&
       (stat.kind || stat.mediaType) === 'video',
   )
-  const sum = (stats, field) =>
+  const sum = (stats: VideoStat[], field: keyof VideoCounters) =>
     stats.reduce((total, stat) => total + (stat[field] || 0), 0)
-  const optionalSum = (field) =>
+  const optionalSum = (field: keyof VideoCounters) =>
     incoming.some((stat) => typeof stat[field] === 'number')
       ? sum(incoming, field)
       : null
@@ -32,7 +64,7 @@ export function videoSnapshot(peer, report, video) {
   const codecs = [
     ...new Set(
       incoming
-        .map((stat) => report.get(stat.codecId)?.mimeType)
+        .map((stat) => stat.codecId && report.get(stat.codecId)?.mimeType)
         .filter(Boolean),
     ),
   ]
@@ -56,11 +88,11 @@ export function videoSnapshot(peer, report, video) {
   }
 }
 
-export function videoDiagnosis(info) {
+export function videoDiagnosis(info: VideoDiagnostics) {
   if (info.statsError) return `Không đọc được thống kê: ${info.statsError}`
   if (info.playbackError)
     return `Chưa phát được video: ${info.playbackError}. Thử nút Phát lại video nhận.`
-  if (!/(sendrecv|recvonly)/.test(info.directions))
+  if (!/(sendrecv|recvonly)/.test(info.directions ?? ''))
     return 'Web chưa có chiều nhận video được thương lượng. Cần kiểm tra SDP hai call leg.'
   if (!info.bytesReceived)
     return 'Web đang chờ dữ liệu video. Kiểm tra chiều gửi của Linphone và media qua FreeSWITCH.'
@@ -73,22 +105,27 @@ export function videoDiagnosis(info) {
   return 'Web đã nhận dữ liệu và phần tử video đã có kích thước hình.'
 }
 
+function diagnosticError(error: unknown) {
+  if (error && typeof error === 'object' && 'message' in error && error.message)
+    return String(error.message)
+  return String(error)
+}
+
 export function observeRemoteVideo({
   peer,
   video,
   onDiagnostics,
   createStream = (tracks) => new MediaStream(tracks),
-}) {
+}: RemoteVideoOptions) {
   let stopped = false
-  let timer
-  let previous
+  let previous: { time: number; bytes: number } | undefined
   let sampling = false
   let playbackError = ''
-  const cleanups = []
-  const watchedTracks = new Set()
+  const cleanups: (() => void)[] = []
+  const watchedTracks = new Set<MediaStreamTrack>()
   const stream = createStream([])
 
-  function listen(target, event, handler) {
+  function listen(target: EventTarget, event: string, handler: EventListener) {
     target.addEventListener(event, handler)
     cleanups.push(() => target.removeEventListener(event, handler))
   }
@@ -101,7 +138,7 @@ export function observeRemoteVideo({
       await video.play()
       if (!stopped) playbackError = ''
     } catch (error) {
-      if (!stopped) playbackError = error.message || String(error)
+      if (!stopped) playbackError = diagnosticError(error)
     }
     void sample()
   }
@@ -141,15 +178,14 @@ export function observeRemoteVideo({
       const info = videoSnapshot(peer, report, video)
       const now = Date.now()
       const elapsed = previous ? now - previous.time : 0
-      info.bytesPerSecond =
-        elapsed > 0 && info.bytesReceived >= previous.bytes
+      const bytesPerSecond =
+        previous && elapsed > 0 && info.bytesReceived >= previous.bytes
           ? Math.round(((info.bytesReceived - previous.bytes) * 1000) / elapsed)
           : null
       previous = { time: now, bytes: info.bytesReceived }
-      onDiagnostics({ ...info, playbackError, statsError: '' })
+      onDiagnostics({ ...info, bytesPerSecond, playbackError, statsError: '' })
     } catch (error) {
-      if (!stopped)
-        onDiagnostics({ statsError: error.message || String(error) })
+      if (!stopped) onDiagnostics({ statsError: diagnosticError(error) })
     } finally {
       sampling = false
     }
@@ -178,7 +214,7 @@ export function observeRemoteVideo({
   }
   syncTracks()
   void sample()
-  timer = setInterval(() => {
+  const timer = setInterval(() => {
     void sample()
   }, 1000)
 

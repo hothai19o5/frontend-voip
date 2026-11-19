@@ -4,7 +4,7 @@ import {
   observeRemoteVideo,
   videoDiagnosis,
   videoSnapshot,
-} from '../src/features/sip/remote-video.js'
+} from '../src/features/sip/remote-video.ts'
 
 class Track extends EventTarget {
   constructor(kind, id) {

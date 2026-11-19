@@ -1,11 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { stripTypeScriptTypes } from 'node:module'
 import { runInNewContext } from 'node:vm'
 
-const source = await readFile(
-  new URL('../src/lib/local-id.js', import.meta.url),
-  'utf8',
+const source = stripTypeScriptTypes(
+  await readFile(new URL('../src/lib/local-id.ts', import.meta.url), 'utf8'),
 )
 
 function load(globals) {

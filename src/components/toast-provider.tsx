@@ -4,7 +4,7 @@ import { Toast } from 'radix-ui'
 import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react'
 import { ToastContext } from './toast-context'
 import type { ToastMessage } from './toast-context'
-import { createLocalId } from '../lib/local-id.js'
+import { createLocalId } from '../lib/local-id'
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<(ToastMessage & { id: string })[]>([])

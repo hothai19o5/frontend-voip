@@ -3,19 +3,16 @@ import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { api, errorMessage } from '../../lib/api'
 import type { AppSession, DirectoryUser } from '../../lib/contracts'
-import { SipClient, INITIAL_STATE } from './sip-client.js'
-import type { SipState } from './types'
+import { SipClient, INITIAL_STATE } from './sip-client'
 import { CallPanel } from './call-panel'
 import { SipContext } from './sip-context'
 import type { SafeSipAccount } from './sip-context'
 import { useMessages } from '../messages/message-context'
-import type { MessageEvent } from '../messages/message-store'
 import { useCallWindow } from './use-call-window'
 import { CallVideo } from './call-video'
 import { Button } from '../../components/ui/button'
 import { useToast } from '../../components/toast-context'
 import { useCallHistory } from '../calls/call-history-context'
-import type { CallResult } from '../calls/call-history-context'
 import { dialableNumber } from '../calls/phone-number'
 
 // This provider and all media elements sit ABOVE the route outlet. Navigation
@@ -27,7 +24,7 @@ export function SipProvider({
   session: AppSession
   children: ReactNode
 }) {
-  const client = useRef<InstanceType<typeof SipClient> | null>(null)
+  const client = useRef<SipClient | null>(null)
   const pendingLookup = useRef<AbortController | null>(null)
   const notify = useToast()
   const { dispatch } = useMessages()
@@ -35,7 +32,7 @@ export function SipProvider({
   const remoteAudio = useRef<HTMLAudioElement>(null)
   const remoteVideo = useRef<HTMLVideoElement>(null)
   const localVideo = useRef<HTMLVideoElement>(null)
-  const [state, setState] = useState<SipState>(INITIAL_STATE as SipState)
+  const [state, setState] = useState(INITIAL_STATE)
   const [account, setAccount] = useState<SafeSipAccount | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -68,7 +65,7 @@ export function SipProvider({
         remoteVideo: remoteVideo.current,
         localVideo: localVideo.current,
       },
-      onState: (next: SipState) => {
+      onState: (next) => {
         if (!alive) return
         setState(next)
         if (next.call !== 'idle' || next.connection !== 'registered')
@@ -80,13 +77,13 @@ export function SipProvider({
           setPeerName('')
         }
       },
-      onError: (cause: unknown) => {
+      onError: (cause) => {
         if (alive) setError(errorMessage(cause))
       },
-      onMessage: (event: MessageEvent) => {
+      onMessage: (event) => {
         if (alive) dispatch({ type: 'message', event })
       },
-      onCallResult: (call: CallResult) => {
+      onCallResult: (call) => {
         if (alive) recordCall(call)
       },
     })
@@ -133,7 +130,7 @@ export function SipProvider({
   ])
 
   const run = useCallback(
-    async (action: (service: InstanceType<typeof SipClient>) => unknown) => {
+    async (action: (service: SipClient) => unknown) => {
       const service = client.current
       if (!service) {
         closeCallWindow()
@@ -254,7 +251,7 @@ export function SipProvider({
           setLoading(true)
           setError('')
           setAccount(null)
-          setState({ ...INITIAL_STATE, connection: 'connecting' } as SipState)
+          setState({ ...INITIAL_STATE, connection: 'connecting' })
           setAttempt((value) => value + 1)
         },
         call,

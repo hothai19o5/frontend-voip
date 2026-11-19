@@ -1,3 +1,5 @@
+import type { VideoDiagnostics } from './remote-video'
+
 export type ConnectionState =
   'disconnected' | 'connecting' | 'connected' | 'registering' | 'registered'
 export type CallState =
@@ -10,11 +12,7 @@ export interface SipState {
   hasVideo: boolean
   muted: boolean
   cameraOff: boolean
-  videoDiagnostics: {
-    playbackError?: string
-    width?: number
-    height?: number
-  } | null
+  videoDiagnostics: VideoDiagnostics | null
 }
 
 export const connectionLabels: Record<ConnectionState, string> = {

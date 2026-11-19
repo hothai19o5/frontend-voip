@@ -1,9 +1,19 @@
 import { Messager, UserAgent } from 'sip.js'
+import type {
+  Core,
+  Invitation,
+  Session,
+  SessionDescriptionHandler,
+  Web,
+} from 'sip.js'
 import { SessionManager } from 'sip.js/lib/platform/web/index.js'
-import { observeRemoteVideo } from './remote-video.js'
-import { createLocalId } from '../../lib/local-id.js'
+import { observeRemoteVideo } from './remote-video.ts'
+import { createLocalId } from '../../lib/local-id.ts'
+import type { CallResult, CallStatus } from '../calls/call-history-context'
+import type { MessageEvent } from '../messages/message-store'
+import type { SipState } from './types'
 
-export const INITIAL_STATE = {
+export const INITIAL_STATE: SipState = {
   connection: 'disconnected',
   call: 'idle',
   peer: '',
@@ -14,7 +24,47 @@ export const INITIAL_STATE = {
   videoDiagnostics: null,
 }
 
-export function sipAddress(value, domain) {
+type SipMedia = {
+  remoteAudio: HTMLAudioElement | null
+  remoteVideo: HTMLVideoElement | null
+  localVideo: HTMLVideoElement | null
+}
+
+type SipClientOptions = {
+  media: SipMedia
+  onState: (state: SipState) => void
+  onMessage: (message: MessageEvent) => void
+  onError: (error: unknown) => void
+  onCallResult?: (result: CallResult) => void
+}
+
+type SipDependencies = {
+  SessionManager?: typeof SessionManager
+  Messager?: typeof Messager
+}
+
+type SipConnection = {
+  server: string
+  domain: string
+  extension: string
+  password: string
+  displayName?: string
+}
+
+type PendingCall = Omit<CallResult, 'endedAt' | 'status' | 'name'> & {
+  name?: string
+  status?: CallStatus
+  response?: number
+  answering?: boolean
+  rang?: boolean
+}
+
+type PendingMessage = {
+  timer: ReturnType<typeof setTimeout>
+  finish: (error?: unknown) => void
+}
+
+export function sipAddress(value: string, domain: string) {
   const address = value.trim()
   if (!address || /[\s<>]/.test(address))
     throw new Error('Extension hoặc SIP URI không hợp lệ.')
@@ -29,13 +79,13 @@ export function offersVideo(sdp = '') {
   return /^m=video\s+(?!0(?:\s|$))\d+/m.test(sdp)
 }
 
-function responseError(response) {
+function responseError(response: Core.IncomingResponse) {
   return new Error(
     `SIP ${response.message.statusCode}: ${response.message.reasonPhrase || 'Yêu cầu bị từ chối'}`,
   )
 }
 
-function incomingCall(session, domain) {
+function incomingCall(session: Invitation, domain: string): PendingCall {
   const sipId = session.request.callId
   const remote = session.remoteIdentity.uri
   // A From URI can include the PBX signaling port while contacts use its AoR.
@@ -57,7 +107,7 @@ function incomingCall(session, domain) {
   }
 }
 
-function outcome(call) {
+function outcome(call: PendingCall): CallStatus {
   if (call.status) return call.status
   if (call.answeredAt !== null) return 'COMPLETED'
   if (call.direction === 'INCOMING') return call.answering ? 'FAILED' : 'MISSED'
@@ -80,9 +130,36 @@ function outcome(call) {
 // The SIP lifetime is independent from React renders. Injectable dependencies let
 // tests exercise failure paths without a live PBX or real credentials.
 export class SipClient {
+  state: SipState = { ...INITIAL_STATE }
+  private readonly Manager: typeof SessionManager
+  private readonly Messager: typeof Messager
+  private readonly media: SipMedia
+  private readonly onState: SipClientOptions['onState']
+  private readonly onMessage: SipClientOptions['onMessage']
+  private readonly onError: SipClientOptions['onError']
+  private readonly onCallResult: NonNullable<SipClientOptions['onCallResult']>
+  private readonly pendingMessages = new Map<string, PendingMessage>()
+  private session: Session | null = null
+  private callRecord: PendingCall | null = null
+  private manager: SessionManager | null = null
+  private remoteVideoObserver: ReturnType<typeof observeRemoteVideo> | null =
+    null
+  private beforeUnload: (() => void) | null = null
+  private callPending = false
+  private generation = 0
+  private stopping = Promise.resolve()
+  private domain = ''
+  private aor = ''
+
   constructor(
-    { media, onState, onMessage, onError, onCallResult = (_result) => {} },
-    dependencies = {},
+    {
+      media,
+      onState,
+      onMessage,
+      onError,
+      onCallResult = () => {},
+    }: SipClientOptions,
+    dependencies: SipDependencies = {},
   ) {
     this.Manager = dependencies.SessionManager || SessionManager
     this.Messager = dependencies.Messager || Messager
@@ -91,35 +168,29 @@ export class SipClient {
     this.onMessage = onMessage
     this.onError = onError
     this.onCallResult = onCallResult
-    this.state = { ...INITIAL_STATE }
-    this.pendingMessages = new Map()
-    this.session = null
-    this.callRecord = null
-    this.manager = null
-    this.callPending = false
-    this.generation = 0
-    this.stopping = Promise.resolve()
   }
 
-  update(patch) {
+  private update(patch: Partial<SipState>) {
     this.state = { ...this.state, ...patch }
     this.onState(this.state)
   }
 
-  clearCall() {
+  private clearCall() {
     this.remoteVideoObserver?.stop()
     this.remoteVideoObserver = null
     this.session = null
     this.update({ ...INITIAL_STATE, connection: this.state.connection })
     for (const element of Object.values(this.media)) {
       if (element) {
-        element.srcObject?.getTracks().forEach((track) => track.stop())
+        const stream = element.srcObject
+        if (stream && 'getTracks' in stream)
+          stream.getTracks().forEach((track) => track.stop())
         element.srcObject = null
       }
     }
   }
 
-  finishCall(status) {
+  private finishCall(status?: CallStatus) {
     const call = this.callRecord
     if (!call) return
     this.callRecord = null
@@ -130,7 +201,7 @@ export class SipClient {
     queueMicrotask(() => this.reportCall(call, endedAt))
   }
 
-  reportCall(call, endedAt) {
+  private reportCall(call: PendingCall, endedAt: number) {
     this.onCallResult({
       id: call.id,
       direction: call.direction,
@@ -147,8 +218,14 @@ export class SipClient {
     })
   }
 
-  bindRemoteVideo(session, handler = session.sessionDescriptionHandler) {
-    const peer = handler?.peerConnection
+  private bindRemoteVideo(
+    session: Session,
+    handler:
+      SessionDescriptionHandler | undefined = session.sessionDescriptionHandler,
+  ) {
+    // SessionManager uses the web handler unless given a custom factory.
+    const peer = (handler as Web.SessionDescriptionHandler | undefined)
+      ?.peerConnection
     if (
       !peer ||
       this.session !== session ||
@@ -172,7 +249,13 @@ export class SipClient {
     if (this.remoteVideoObserver) await this.remoteVideoObserver.play()
   }
 
-  async connect({ server, domain, extension, password, displayName }) {
+  async connect({
+    server,
+    domain,
+    extension,
+    password,
+    displayName,
+  }: SipConnection) {
     const url = new URL(server)
     const localWs =
       url.protocol === 'ws:' &&
@@ -188,7 +271,7 @@ export class SipClient {
     this.domain = domain
     this.aor = aor
     const current = () => this.manager === manager
-    const manager = new this.Manager(server, {
+    const manager: SessionManager = new this.Manager(server, {
       aor,
       // SessionManager's anonymous beforeunload handler calls stop() again if
       // a previous logout is still stopping. Own this through disconnect's
@@ -198,10 +281,10 @@ export class SipClient {
       reconnectionAttempts: 0,
       media: {
         constraints: { audio: true, video: false },
-        local: { video: this.media.localVideo },
+        local: { video: this.media.localVideo ?? undefined },
         // SessionManager picks only one remote element. Attach video separately
         // below, muted, so both voice-only calls and video calls have audio.
-        remote: { audio: this.media.remoteAudio },
+        remote: { audio: this.media.remoteAudio ?? undefined },
       },
       userAgentOptions: {
         authorizationUsername: extension.trim(),
@@ -244,7 +327,8 @@ export class SipClient {
         },
         onCallReceived: (session) => {
           if (!current()) return
-          const call = incomingCall(session, this.domain)
+          // SIP.js passes an Invitation here, but the delegate declares Session.
+          const call = incomingCall(session as Invitation, this.domain)
           if (this.session !== session || this.callPending) {
             call.status = 'MISSED'
             this.reportCall(call, call.startedAt)
@@ -287,7 +371,7 @@ export class SipClient {
           this.bindRemoteVideo(session)
           if (!this.remoteVideoObserver && this.media.remoteVideo) {
             this.media.remoteVideo.srcObject =
-              manager.getRemoteMediaStream(session)
+              manager.getRemoteMediaStream(session) ?? null
             void this.media.remoteVideo.play().catch(() => {
               this.onError(
                 new Error(
@@ -358,20 +442,24 @@ export class SipClient {
     }
   }
 
-  requireRegistered() {
+  private requireRegistered() {
     if (this.state.connection !== 'registered' || !this.manager)
       throw new Error('Cần đăng ký SIP trước.')
+    return this.manager
   }
 
-  /** @param {string} [dialedPhoneNumber] */
-  async call(target, video, name = '', dialedPhoneNumber) {
-    this.requireRegistered()
+  async call(
+    target: string,
+    video: boolean,
+    name = '',
+    dialedPhoneNumber?: string,
+  ) {
+    const manager = this.requireRegistered()
     if (this.session || this.callPending)
       throw new Error('Đang có một cuộc gọi khác.')
     const peer = sipAddress(target, this.domain).toString()
-    const manager = this.manager
     const generation = this.generation
-    const call = {
+    const call: PendingCall = {
       id: createLocalId(),
       direction: 'OUTGOING',
       peer,
@@ -419,11 +507,11 @@ export class SipClient {
     }
   }
 
-  async answer(video) {
-    if (this.state.call !== 'incoming' || !this.session)
+  async answer(video: boolean) {
+    const manager = this.manager
+    if (this.state.call !== 'incoming' || !this.session || !manager)
       throw new Error('Không có cuộc gọi đến.')
     const session = this.session
-    const manager = this.manager
     const generation = this.generation
     if (this.callRecord) this.callRecord.answering = true
     this.update({ call: 'answering' })
@@ -455,8 +543,10 @@ export class SipClient {
       this.callRecord.status = incoming ? 'DECLINED' : 'CANCELED'
     this.update({ call: 'ending' })
     try {
-      if (incoming) await this.manager.decline(session)
-      else await this.manager.hangup(session)
+      const manager = this.manager
+      if (!manager) return
+      if (incoming) await manager.decline(session)
+      else await manager.hangup(session)
     } catch (error) {
       if (generation === this.generation && this.session === session) {
         this.finishCall()
@@ -466,10 +556,11 @@ export class SipClient {
     }
   }
 
-  toggleTrack(kind) {
-    if (this.state.call !== 'active' || !this.session) return
+  toggleTrack(kind: 'audio' | 'video') {
+    const manager = this.manager
+    if (this.state.call !== 'active' || !this.session || !manager) return
     const tracks =
-      this.manager
+      manager
         .getLocalMediaStream(this.session)
         ?.getTracks()
         .filter((track) => track.kind === kind) || []
@@ -489,7 +580,7 @@ export class SipClient {
     )
   }
 
-  async sendMessage(target, body) {
+  async sendMessage(target: string, body: string) {
     this.requireRegistered()
     if (!body.trim()) throw new Error('Nhập nội dung tin nhắn.')
     const uri = sipAddress(target, this.domain)
@@ -503,10 +594,11 @@ export class SipClient {
       status: 'pending',
       time: Date.now(),
     })
-    return new Promise((resolve, reject) => {
-      const finish = (error) => {
-        if (!this.pendingMessages.has(id)) return
-        clearTimeout(this.pendingMessages.get(id).timer)
+    return new Promise<void>((resolve, reject) => {
+      const finish = (error?: unknown) => {
+        const pending = this.pendingMessages.get(id)
+        if (!pending) return
+        clearTimeout(pending.timer)
         this.pendingMessages.delete(id)
         this.onMessage({ id, status: error ? 'failed' : 'accepted' })
         if (error) reject(error)
@@ -523,8 +615,9 @@ export class SipClient {
       )
       this.pendingMessages.set(id, { timer, finish })
       try {
+        const manager = this.requireRegistered()
         const messager = new this.Messager(
-          this.manager.userAgent,
+          manager.userAgent,
           uri,
           body,
           'text/plain',
@@ -543,7 +636,7 @@ export class SipClient {
     })
   }
 
-  failPendingMessages(reason) {
+  private failPendingMessages(reason: string) {
     for (const pending of this.pendingMessages.values())
       pending.finish(new Error(reason))
   }

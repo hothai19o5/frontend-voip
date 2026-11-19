@@ -5,7 +5,7 @@ import {
   SipClient,
   offersVideo,
   sipAddress,
-} from '../src/features/sip/sip-client.js'
+} from '../src/features/sip/sip-client.ts'
 
 const CONFIG = {
   server: 'wss://pbx.test:7443',

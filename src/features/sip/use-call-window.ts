@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createLocalId } from '../../lib/local-id.js'
+import { createLocalId } from '../../lib/local-id'
 import { APP_NAME } from '../../lib/brand'
 import type { CallState } from './types'
 

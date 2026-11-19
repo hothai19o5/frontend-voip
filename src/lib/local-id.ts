@@ -1,7 +1,7 @@
 let sequence = 0
 
 // For UI and message IDs, never authentication tokens or secrets.
-export function createLocalId() {
+export function createLocalId(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') {
     return globalThis.crypto.randomUUID()
   }
