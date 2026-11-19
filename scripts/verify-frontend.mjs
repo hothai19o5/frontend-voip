@@ -560,8 +560,11 @@ try {
     },
   )
   await check(
-    'islands, shared-content panels and mobile list/thread/profile behavior',
+    'islands, contact phone, shared-content panels and mobile list/thread/profile behavior',
     async () => {
+      const profile = page.getByRole('complementary', { name: 'Thông tin người đang chat' })
+      await profile.getByText('+84900000002', { exact: true }).waitFor()
+      assert.equal(await profile.getByText('1002@pbx.test', { exact: true }).count(), 0)
       await page.getByText('File đã chia sẻ', { exact: true }).click()
       await page
         .getByText('Chưa có file được chia sẻ.', { exact: true })

@@ -141,6 +141,7 @@ try {
         .fill('Bản nháp không lưu')
       await page.reload()
       await page.locator('.message-body').filter({ hasText: text }).waitFor()
+      await page.locator('.detail-person').getByText('+84900000002', { exact: true }).waitFor()
       assert.equal(await page.locator('.chat-message').count(), 2)
       assert.equal(
         await page

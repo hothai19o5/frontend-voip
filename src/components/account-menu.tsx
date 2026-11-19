@@ -91,18 +91,10 @@ export function AccountMenu({ collapsed }: { collapsed: boolean }) {
               <dt>Email</dt>
               <dd>{user.email}</dd>
             </div>
-            {user.phoneNumber ? (
-              <div>
-                <dt>Số điện thoại</dt>
-                <dd>{user.phoneNumber}</dd>
-              </div>
-            ) : null}
-            {user.sip ? (
-              <div>
-                <dt>Máy nhánh</dt>
-                <dd>{user.sip.extension}</dd>
-              </div>
-            ) : null}
+            <div>
+              <dt>Số điện thoại</dt>
+              <dd>{user.phoneNumber ?? 'Chưa có số điện thoại'}</dd>
+            </div>
           </dl>
         </DialogContent>
       </Dialog>

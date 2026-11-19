@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import {
   ChevronDown,
   FileText,
@@ -11,8 +12,33 @@ import {
 } from 'lucide-react'
 import { PersonAvatar } from '../../components/app-ui'
 import { Button } from '../../components/ui/button'
+import { api } from '../../lib/api'
+import { useSession } from '../auth/use-session'
 import type { Conversation } from './message-store'
 import { PresenceStatus } from '../presence/presence-status'
+
+function ConversationPhone({ peer }: { peer: string }) {
+  const { session } = useSession()
+  const token = session?.accessToken
+  const [label, setLabel] = useState('Đang tải số điện thoại…')
+
+  useEffect(() => {
+    if (!token) return
+    const abort = new AbortController()
+    void api.contactPhone(token, peer, abort.signal).then(
+      ({ phoneNumber }) => {
+        if (!abort.signal.aborted)
+          setLabel(phoneNumber ?? 'Chưa có số điện thoại')
+      },
+      () => {
+        if (!abort.signal.aborted) setLabel('Không tải được số điện thoại')
+      },
+    )
+    return () => abort.abort()
+  }, [peer, token])
+
+  return <p>{label}</p>
+}
 
 export function ConversationProfile({
   conversation,
@@ -46,11 +72,7 @@ export function ConversationProfile({
           <div className="detail-person">
             <PersonAvatar name={conversation.name} large />
             <h2>{conversation.name}</h2>
-            <p>
-              {conversation.user
-                ? `@${conversation.user.username}`
-                : conversation.peer.replace(/^sip:/, '')}
-            </p>
+            <ConversationPhone key={conversation.peer} peer={conversation.peer} />
             <PresenceStatus
               userId={conversation.user?.id ?? conversation.peerUserId}
             />

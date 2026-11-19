@@ -129,6 +129,11 @@ export async function request<T>(
 }
 
 export const api = {
+  contactPhone: (token: string, peer: string, signal: AbortSignal) =>
+    request<{ phoneNumber: string | null }>(
+      `/users/contact-phone?${new URLSearchParams({ peer })}`,
+      { token, signal },
+    ),
   resolvePhoneCall: (token: string, phoneNumber: string, signal: AbortSignal) =>
     request<ResolvedPhoneCall>('/calls/resolve', {
       token,

@@ -224,6 +224,22 @@ http
       return problem(res, 401, 'UNAUTHORIZED')
     }
     const caller = state.users.find((u) => u.id === session.userId)
+    if (path === '/users/contact-phone' && req.method === 'GET') {
+      const rawPeer = url.searchParams.get('peer') ?? ''
+      const peer = rawPeer.trim().replace(/^sips?:/i, '').split(/[;?]/, 1)[0]
+      const at = peer.lastIndexOf('@')
+      const normalized = `sip:${peer.slice(0, at)}@${peer.slice(at + 1).toLowerCase()}`
+      await save()
+      if (rawPeer.length > 320 || normalized.length > 320 || at < 1 ||
+          at === peer.length - 1 || /[\s<>]/.test(peer))
+        return problem(res, 400, 'INVALID_REQUEST')
+      const contact = state.users.find(
+        (user) => user.status === 'ACTIVE' &&
+          user.sip?.provisioningStatus === 'READY' && address(user) === normalized,
+      )
+      res.setHeader('Cache-Control', 'no-store')
+      return send(res, 200, { phoneNumber: contact?.phoneNumber ?? null })
+    }
     if (path === '/calls/resolve' && req.method === 'POST') {
       await save()
       if (!state.control.phoneCallingEnabled) return problem(res, 503, 'PHONE_CALLING_DISABLED')
