@@ -303,28 +303,39 @@ http
         return send(res, 200, missedCalls(matching))
       }
       if (req.method === 'POST') {
+        const { dialedPhoneNumber, ...chatCall } = body
         if (body.dialedPhoneNumber) {
-          const phoneNumber = body.dialedPhoneNumber
+          const phoneNumber = dialedPhoneNumber
           const pstn = body.peer.startsWith(`sip:${phoneNumber}@`)
-          if (!state.dialedHistory.some((call) => call.owner === caller.id && call.id === body.id)) {
+          const recorded = state.dialedHistory.some((call) => call.owner === caller.id && call.id === body.id)
+          if (!recorded) {
             const { id, name, status, startedAt, answeredAt, endedAt } = body
             state.dialedHistory.push({ owner: caller.id, id, phoneNumber, name, status, startedAt, answeredAt, endedAt,
               route: pstn ? 'APP_TO_PHONE' : 'APP_TO_APP' })
           }
           if (pstn) {
-            await save()
-            return send(res, 204)
+            const contact = !recorded && state.users.find((user) =>
+              user.phoneNumber === phoneNumber && user.id !== caller.id &&
+              user.status === 'ACTIVE' && user.sip?.provisioningStatus === 'READY',
+            )
+            if (!contact) {
+              await save()
+              return send(res, 204)
+            }
+            chatCall.peer = address(contact)
+            chatCall.pstnPhoneNumber = phoneNumber
           }
         }
         const existing = records.find((call) => call.id === body.id && call.direction === body.direction)
         if (existing) {
-          if (existing.peer !== body.peer) return problem(res, 409, 'CALL_CONFLICT')
+          if (existing.peer !== chatCall.peer || existing.pstnPhoneNumber !== chatCall.pstnPhoneNumber)
+            return problem(res, 409, 'CALL_CONFLICT')
           if (body.direction === 'INCOMING' && callEvidence(body) > callEvidence(existing)) {
-            Object.assign(existing, body, { unread: false })
+            Object.assign(existing, chatCall, { unread: false })
           }
         } else {
           state.callSequence = (state.callSequence || 0) + 1
-          state.callHistory.push({ ...body, owner: caller.id, sequence: state.callSequence, unread: body.status === 'MISSED' })
+          state.callHistory.push({ ...chatCall, owner: caller.id, sequence: state.callSequence, unread: body.status === 'MISSED' })
         }
         await save()
         return send(res, 204)

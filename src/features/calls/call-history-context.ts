@@ -39,6 +39,7 @@ type CallDetails = {
   answeredAt: number | null
   endedAt: number
   dialedPhoneNumber?: string
+  pstnPhoneNumber?: string | null
 }
 
 export type CallResult = CallDetails & { id: string }

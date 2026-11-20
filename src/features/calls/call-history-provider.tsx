@@ -93,13 +93,13 @@ export function CallHistoryProvider({
     (call: CallResult) => {
       const peer = normalizePeer(call.peer)
       const result = { ...call, peer }
+      writer.current?.enqueue(callKey(result), result)
+      // The server links a phone-network result to the contact's chat peer.
       if (
         result.dialedPhoneNumber &&
         isPstnPeer(peer, result.dialedPhoneNumber)
-      ) {
-        writer.current?.enqueue(callKey(result), result)
+      )
         return
-      }
       dispatch({ type: 'call-peers', peers: [result] })
       setObserved((current) => ({
         ...current,
@@ -110,7 +110,6 @@ export function CallHistoryProvider({
           result,
         ],
       }))
-      writer.current?.enqueue(callKey(result), result)
     },
     [dispatch],
   )

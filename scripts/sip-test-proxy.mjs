@@ -11,6 +11,7 @@ export function createSipProxy(port = 15061) {
   const accounts = new Map(),
     aliases = new Map(),
     transactions = new Map()
+  const inviteRejections = new Map()
   const stats = {
     connections: 0,
     registrations: 0,
@@ -73,6 +74,12 @@ export function createSipProxy(port = 15061) {
       if (method === 'INVITE') {
         stats.invites++
         stats.lastInviteTarget = normalize(message.first.split(' ')[1])
+        const rejection = inviteRejections.get(stats.lastInviteTarget)
+        if (rejection) {
+          stats.rejects++
+          response(socket, message, rejection.status, rejection.reason)
+          return
+        }
       }
       if (method === 'MESSAGE') stats.messages++
       if (method === 'BYE') stats.byes++
@@ -100,6 +107,7 @@ export function createSipProxy(port = 15061) {
   return {
     stats,
     accounts,
+    inviteRejections,
     disconnectAll: () => {
       for (const socket of server.clients) socket.close()
     },

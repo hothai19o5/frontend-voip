@@ -1,8 +1,8 @@
-import { Phone, PhoneMissed, Video } from 'lucide-react'
+import { Phone, PhoneMissed, Smartphone, Video } from 'lucide-react'
 import { Button } from '../../components/ui/button'
 import { timeLabel } from '../messages/message-format'
 import type { CallResult } from './call-history-context'
-import { callOutcome } from './call-format'
+import { callOutcome, callTitle } from './call-format'
 
 function duration(call: CallResult) {
   if (call.answeredAt == null) return null
@@ -25,11 +25,16 @@ export function CallActivity({
 }: {
   call: CallResult
   canCall: boolean
-  redial: (video: boolean) => void
+  redial: (call: CallResult) => void
 }) {
   const missed = call.status === 'MISSED'
-  const kind = call.video ? 'Cuộc gọi video' : 'Cuộc gọi thoại'
-  const Icon = missed ? PhoneMissed : call.video ? Video : Phone
+  const Icon = call.pstnPhoneNumber
+    ? Smartphone
+    : missed
+      ? PhoneMissed
+      : call.video
+        ? Video
+        : Phone
   const length = duration(call)
   const details = missed
     ? call.video
@@ -49,7 +54,7 @@ export function CallActivity({
             <Icon size={17} aria-hidden="true" />
           </span>
           <div>
-            <strong>{missed ? 'Cuộc gọi nhỡ' : kind}</strong>
+            <strong>{missed ? 'Cuộc gọi nhỡ' : callTitle(call)}</strong>
             <span>{details}</span>
           </div>
         </div>
@@ -57,7 +62,7 @@ export function CallActivity({
           variant="secondary"
           size="sm"
           disabled={!canCall}
-          onClick={() => redial(call.video)}
+          onClick={() => redial(call)}
         >
           Gọi lại
         </Button>

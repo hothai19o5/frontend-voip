@@ -449,6 +449,60 @@ try {
       }
     },
   )
+  await check('answered and declined phone-network calls stay in the contact chat after reload', async () => {
+    const number = '+84900000002'
+    const handset = await ctx2.newPage()
+    try {
+      await handset.route('**/api/v1/sip/account', async (route) => {
+        const response = await route.fetch()
+        await route.fulfill({ response, json: { ...(await response.json()), extension: number } })
+      })
+      await login(handset, 'member02')
+      await until(() => proxy.accounts.has(`${number}@pbx.test`))
+
+      async function dial(button, accepted) {
+        const saved = main.waitForResponse((response) =>
+          response.url().endsWith('/api/v1/calls') && response.request().method() === 'POST',
+        )
+        if (accepted) {
+          const outgoing = main.waitForEvent('popup')
+          const incoming = handset.waitForEvent('popup')
+          await button.click()
+          const [caller, callee] = await Promise.all([outgoing, incoming])
+          await answer(caller, callee)
+          await caller.getByRole('button', { name: 'Kết thúc cuộc gọi', exact: true }).click()
+          await until(() => caller.isClosed() && callee.isClosed())
+        } else {
+          await button.click()
+        }
+        const response = await saved
+        assert.equal(response.status(), 204)
+        const call = response.request().postDataJSON()
+        assert.equal(call.peer, `sip:${number}@pbx.test`)
+        assert.equal(call.status, accepted ? 'COMPLETED' : 'DECLINED')
+      }
+
+      const cards = main.locator('.message-history .call-activity').filter({ hasText: 'Cuộc gọi qua số điện thoại' })
+      const completed = cards.filter({ hasText: /\d+ giây/ })
+      const declined = cards.filter({ hasText: 'Đã từ chối' })
+      await dial(main.getByRole('button', { name: 'Gọi qua số điện thoại từ hội thoại', exact: true }), true)
+      await completed.waitFor()
+      proxy.inviteRejections.set(`${number}@pbx.test`, { status: 603, reason: 'Decline' })
+      await dial(completed.getByRole('button', { name: 'Gọi lại', exact: true }), false)
+      await declined.waitFor()
+      await main.locator('.conversation-item').filter({ hasText: 'Trần Hoàng Nam' })
+        .getByText('Cuộc gọi qua số điện thoại · Đã từ chối', { exact: true }).waitFor()
+
+      await main.reload()
+      await completed.waitFor()
+      await declined.waitFor()
+      assert.equal(await completed.count(), 1)
+      assert.equal(await declined.count(), 1)
+    } finally {
+      proxy.inviteRejections.delete(`${number}@pbx.test`)
+      await handset.close()
+    }
+  })
   assert.deepEqual(errors, [])
   await writeFile(
     new URL('call-window-results.json', output),

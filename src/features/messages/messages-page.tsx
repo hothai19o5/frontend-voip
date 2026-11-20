@@ -245,6 +245,10 @@ export function MessagesPage() {
   function callByPhone() {
     if (phoneNumber && connectionReady()) void sip.callPhone(phoneNumber, true)
   }
+  function redialCall(result: CallResult) {
+    if (!result.pstnPhoneNumber) call(result.video)
+    else if (connectionReady()) void sip.callPhone(result.pstnPhoneNumber, true)
+  }
   const callIdle = sip.state.call === 'idle' && !sip.pendingPhone
   const canCall =
     Boolean(selected) &&
@@ -253,7 +257,8 @@ export function MessagesPage() {
     (!selected?.user ||
       (selected.user.sip?.provisioningStatus === 'READY' &&
         selected.user.sip.extensionPresent === true))
-  const canCallByPhone = callIdle && !blocked && !!phoneNumber
+  const canDialPhone = callIdle && !blocked && phoneCallingEnabled
+  const canCallByPhone = canDialPhone && !!phoneNumber
 
   return (
     <>
@@ -545,9 +550,10 @@ export function MessagesPage() {
                         <CallActivity
                           call={item.call}
                           canCall={
-                            canCall && sip.state.connection === 'registered'
+                            (item.call.pstnPhoneNumber ? canDialPhone : canCall) &&
+                            sip.state.connection === 'registered'
                           }
-                          redial={call}
+                          redial={redialCall}
                         />
                       ) : (
                         <MessageBubble message={item.message} />
