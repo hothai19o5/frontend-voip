@@ -160,6 +160,37 @@ try {
       'opening/moving views must not register SIP again',
     )
   }
+  await check('chat phone button and recent redial use the phone number, not the app extension', async () => {
+    const phone = main.getByRole('button', {
+      name: 'Gọi qua số điện thoại từ hội thoại',
+      exact: true,
+    })
+    await until(() => phone.isEnabled())
+    await until(() => main.getByRole('button', { name: 'Gọi qua số điện thoại', exact: true }).isEnabled())
+    await main.setViewportSize({ width: 390, height: 844 })
+    assert(await phone.isVisible())
+    assert(await main.locator('.thread-header').evaluate((el) => el.scrollWidth <= el.clientWidth))
+
+    async function expectPhoneCall(button) {
+      const saved = main.waitForResponse((response) =>
+        response.url().endsWith('/api/v1/calls') && response.request().method() === 'POST',
+      )
+      const before = proxy.stats.invites
+      await button.click()
+      const response = await saved
+      assert.equal(response.status(), 204)
+      assert.equal(response.request().postDataJSON().peer, 'sip:+84900000002@pbx.test')
+      assert.equal(proxy.stats.invites, before + 1)
+      assert.equal(proxy.stats.lastInviteTarget, '+84900000002@pbx.test')
+    }
+
+    await expectPhoneCall(phone)
+    await main.setViewportSize(options.viewport)
+    await main.getByRole('link', { name: 'Cuộc gọi', exact: true }).click()
+    await expectPhoneCall(main.getByRole('button', { name: 'Gọi lại +84900000002', exact: true }).first())
+    await main.getByRole('link', { name: 'Đoạn chat', exact: true }).click()
+    unchanged()
+  })
   await check(
     'outgoing/incoming popups share controls, audio, duration and a single SIP registration',
     async () => {

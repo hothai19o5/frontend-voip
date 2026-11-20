@@ -150,11 +150,16 @@ export const api = {
       `/users/contact-phone?${new URLSearchParams({ peer })}`,
       { token, signal },
     ),
-  resolvePhoneCall: (token: string, phoneNumber: string, signal: AbortSignal) =>
+  resolvePhoneCall: (
+    token: string,
+    phoneNumber: string,
+    signal: AbortSignal,
+    forcePstn: boolean,
+  ) =>
     request<ResolvedPhoneCall>('/calls/resolve', {
       token,
       method: 'POST',
-      body: { phoneNumber },
+      body: forcePstn ? { phoneNumber, forcePstn } : { phoneNumber },
       signal,
     }),
   dialedCalls: (token: string, signal?: AbortSignal) =>

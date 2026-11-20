@@ -135,7 +135,7 @@ function RecentCalls({
 }: {
   token: string
   canCall: boolean
-  callPhone: (number: string) => Promise<void>
+  callPhone: ReturnType<typeof useSip>['callPhone']
 }) {
   const [items, setItems] = useState<DialedCall[] | null>(null)
   const [failed, setFailed] = useState(false)
@@ -209,7 +209,7 @@ function RecentCalls({
               title="Gọi lại"
               aria-label={`Gọi lại ${item.phoneNumber}`}
               onClick={() => {
-                void callPhone(item.phoneNumber)
+                void callPhone(item.phoneNumber, item.route === 'APP_TO_PHONE')
               }}
             >
               <Phone />

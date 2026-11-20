@@ -134,7 +134,24 @@ assumptions:
       mock stores fixture bytes in memory.
     source: scripts/verify-expressions.mjs; postman/mocks/voip/default.cjs; ../backend-voip/docs/ATTACHMENTS.md
     updated_at: '2026-11-19'
+  - id: chat-phone-route
+    status: supported
+    claim: The chat phone button requests the phone-network route for a contact with an app extension.
+    reason: The optional forcePstn field in the VoIP API selects the outbound phone-network route.
+    verification: >-
+      Chrome with the portable HTTP handler and SIP proxy sent an INVITE to the
+      contact's E.164 number from the chat header at 390px and when redialing
+      from Recents. Both calls recorded the phone route. A saved Postman
+      request also passed one assertion against the local handler. These runs
+      exercise simulated signaling. Live gateway dialing remains unverified.
+      Frontend baseline is recorded in chat-phone-route-2026-11-20 below.
+    source: scripts/verify-call-window.mjs; postman/mocks/voip/default.cjs; ../backend-voip/docs/openapi.yaml
+    updated_at: '2026-11-20'
 fingerprints:
+  - id: chat-phone-route-2026-11-20
+    date: '2026-11-20'
+    commit: a80f6b2e4bbc58cbc381824fdc66367c7a09b844 (dirty working tree with the chat phone route)
+    cli: Postman CLI 1.74.0
   - id: frontend-implementation-2026-11-17
     date: '2026-11-17'
     commit: c96cadf0c4e9f84b5b31eab56c82b169bf08117d (dirty working tree with frontend implementation)

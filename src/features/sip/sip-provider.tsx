@@ -176,7 +176,7 @@ export function SipProvider({
     return run((service) => service.call(peer, video, name))
   }
 
-  const callPhone = async (number: string) => {
+  const callPhone = async (number: string, forcePstn = false) => {
     const digits = dialableNumber(number)
     const service = client.current
     if (
@@ -199,8 +199,12 @@ export function SipProvider({
         session.accessToken,
         digits,
         lookup.signal,
+        forcePstn,
       )
       if (pendingLookup.current !== lookup) return
+      if (forcePstn && route.type !== 'APP_TO_PHONE') {
+        throw new Error('Chưa thể gọi qua số điện thoại.')
+      }
       pendingLookup.current = null
       setPendingPhone('')
       setPeerName(label)

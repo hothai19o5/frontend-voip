@@ -6,6 +6,7 @@ import {
   MessageCircle,
   Phone,
   Search,
+  Smartphone,
   SquarePen,
   Video,
 } from 'lucide-react'
@@ -13,7 +14,9 @@ import { Field, PersonAvatar } from '../../components/app-ui'
 import { Button } from '../../components/ui/button'
 import { useToast } from '../../components/toast-context'
 import { useMediaQuery } from '../../hooks/use-media-query'
+import { api } from '../../lib/api'
 import type { DirectoryUser } from '../../lib/contracts'
+import { useSession } from '../auth/use-session'
 import { PresenceStatus } from '../presence/presence-status'
 import { useSip } from '../sip/sip-context'
 import { PeoplePicker } from '../users/people-picker'
@@ -36,6 +39,33 @@ const dateLabel = (time: number) =>
     month: 'long',
     year: 'numeric',
   })
+
+function useConversationPhone(peer?: string, token?: string) {
+  const [result, setResult] = useState<{
+    peer: string
+    token: string
+    number: string | null
+    failed?: boolean
+  }>()
+
+  useEffect(() => {
+    if (!peer || !token) return
+    const abort = new AbortController()
+    void api.contactPhone(token, peer, abort.signal).then(
+      ({ phoneNumber }) => {
+        if (!abort.signal.aborted)
+          setResult({ peer, token, number: phoneNumber })
+      },
+      () => {
+        if (!abort.signal.aborted)
+          setResult({ peer, token, number: null, failed: true })
+      },
+    )
+    return () => abort.abort()
+  }, [peer, token])
+
+  return result?.peer === peer && result?.token === token ? result : undefined
+}
 
 export function MessagesPage() {
   const {
@@ -60,6 +90,7 @@ export function MessagesPage() {
     markSeen,
   } = useCallHistory()
   const sip = useSip()
+  const { session } = useSession()
   const notify = useToast()
   const [params, setParams] = useSearchParams()
   const explicitPeer = params.get('peer')
@@ -98,6 +129,17 @@ export function MessagesPage() {
     : sorted[0]?.conversation
   const messages = selected?.messages ?? []
   const selectedPeer = selected?.peer
+  const phoneCallingEnabled = session?.user.phoneCallingEnabled === true
+  const contactPhone = useConversationPhone(
+    selectedPeer,
+    profileOpen || phoneCallingEnabled ? session?.accessToken : undefined,
+  )
+  const phoneNumber = contactPhone?.number
+  const phoneLabel = contactPhone?.failed
+    ? 'Không tải được số điện thoại'
+    : contactPhone
+      ? (phoneNumber ?? 'Chưa có số điện thoại')
+      : 'Đang tải số điện thoại…'
   const callThread = useCallThread(selectedPeer)
   const activity = [
     ...messages.map((message) => ({
@@ -200,13 +242,18 @@ export function MessagesPage() {
     if (selected.user) void sip.call(selected.user, video)
     else void sip.callAddress(selected.peer, selected.name, video)
   }
+  function callByPhone() {
+    if (phoneNumber && connectionReady()) void sip.callPhone(phoneNumber, true)
+  }
+  const callIdle = sip.state.call === 'idle' && !sip.pendingPhone
   const canCall =
     Boolean(selected) &&
-    sip.state.call === 'idle' &&
+    callIdle &&
     !blocked &&
     (!selected?.user ||
       (selected.user.sip?.provisioningStatus === 'READY' &&
         selected.user.sip.extensionPresent === true))
+  const canCallByPhone = callIdle && !blocked && !!phoneNumber
 
   return (
     <>
@@ -413,6 +460,18 @@ export function MessagesPage() {
                   >
                     <Video />
                   </Button>
+                  {phoneCallingEnabled ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Gọi qua số điện thoại từ hội thoại"
+                      title={phoneNumber ? 'Gọi qua số điện thoại' : phoneLabel}
+                      disabled={!canCallByPhone}
+                      onClick={callByPhone}
+                    >
+                      <Smartphone />
+                    </Button>
+                  ) : null}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -531,6 +590,9 @@ export function MessagesPage() {
             close={() => setProfilePreference(false)}
             call={call}
             canCall={canCall}
+            phoneLabel={phoneLabel}
+            callByPhone={phoneCallingEnabled ? callByPhone : undefined}
+            canCallByPhone={canCallByPhone}
           />
         ) : null}
       </main>

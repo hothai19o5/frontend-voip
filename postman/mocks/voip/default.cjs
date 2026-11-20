@@ -267,11 +267,13 @@ http
       if (!/^\+[1-9][0-9]{7,14}$/.test(phoneNumber)) return problem(res, 400, 'INVALID_PHONE_NUMBER')
       const target = state.users.find((user) => user.phoneNumber === phoneNumber)
       if (target?.id === caller.id) return problem(res, 409, 'SELF_CALL')
-      if (target && (target.status !== 'ACTIVE' || !target.sip)) return problem(res, 409, 'APP_DESTINATION_UNAVAILABLE')
-      if (!target && !/^\+84([35789][0-9]{8}|2[0-9]{9})$/.test(phoneNumber)) return problem(res, 403, 'PSTN_DESTINATION_DENIED')
+      const appRoute = !!target && body.forcePstn !== true
+      if (target && (target.status !== 'ACTIVE' || (appRoute && !target.sip))) return problem(res, 409, 'APP_DESTINATION_UNAVAILABLE')
+      if (!appRoute && !/^\+84([35789][0-9]{8}|2[0-9]{9})$/.test(phoneNumber)) return problem(res, 403, 'PSTN_DESTINATION_DENIED')
+      if (!appRoute && !caller.sip) return problem(res, 409, 'CALLER_SIP_UNAVAILABLE')
       return send(res, 200, {
-        type: target ? 'APP_TO_APP' : 'APP_TO_PHONE', phoneNumber,
-        sipUri: target ? address(target) : `sip:${phoneNumber}@${caller.sip.domain}`,
+        type: appRoute ? 'APP_TO_APP' : 'APP_TO_PHONE', phoneNumber,
+        sipUri: appRoute ? address(target) : `sip:${phoneNumber}@${caller.sip.domain}`,
         displayName: target?.displayName ?? null,
       })
     }
